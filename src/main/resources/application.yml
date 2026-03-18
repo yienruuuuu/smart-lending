@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: smart-lending
+
+bitfinex:
+  api-key: ${BITFINEX_API_KEY:}
+  api-secret: ${BITFINEX_API_SECRET:}
+  rest-base-url: ${BITFINEX_REST_BASE_URL:https://api.bitfinex.com}
+  public-base-url: ${BITFINEX_PUBLIC_BASE_URL:https://api-pub.bitfinex.com}
+  funding-symbols:
+    - ${BITFINEX_FUNDING_SYMBOL:fUSD}
+  book-precision: ${BITFINEX_BOOK_PRECISION:R0}
+  book-length: ${BITFINEX_BOOK_LENGTH:25}
+  polling-interval-seconds: ${BITFINEX_POLLING_INTERVAL_SECONDS:10}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
