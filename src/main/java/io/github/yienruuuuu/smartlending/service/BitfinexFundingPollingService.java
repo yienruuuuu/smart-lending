@@ -83,6 +83,8 @@ public class BitfinexFundingPollingService {
                 properties.getBookLength()
         );
 
+        log.info("Polling funding url={}", url);
+
         try {
             String responseBody = restTemplate.exchange(url, HttpMethod.GET, null, String.class).getBody();
             JsonNode root = objectMapper.readTree(responseBody);

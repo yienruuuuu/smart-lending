@@ -1,7 +1,9 @@
 package io.github.yienruuuuu.smartlending.controller;
 
+import io.github.yienruuuuu.smartlending.model.FundingAccountSummaryDto;
 import io.github.yienruuuuu.smartlending.model.FundingPositionDto;
 import io.github.yienruuuuu.smartlending.service.BitfinexFundingAccountRestClient;
+import io.github.yienruuuuu.smartlending.service.FundingAccountSummaryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,31 +20,44 @@ import org.springframework.web.bind.annotation.RestController;
 public class FundingAccountController {
 
     private final BitfinexFundingAccountRestClient fundingAccountRestClient;
+    private final FundingAccountSummaryService fundingAccountSummaryService;
 
-    public FundingAccountController(BitfinexFundingAccountRestClient fundingAccountRestClient) {
+    public FundingAccountController(
+            BitfinexFundingAccountRestClient fundingAccountRestClient,
+            FundingAccountSummaryService fundingAccountSummaryService
+    ) {
         this.fundingAccountRestClient = fundingAccountRestClient;
+        this.fundingAccountSummaryService = fundingAccountSummaryService;
     }
 
-    @Operation(summary = "查詢目前掛單中的 funding offers")
+    @Operation(summary = "Get funding summary: wallet total, lent, idle, and open offers")
+    @GetMapping("/summary")
+    public ResponseEntity<FundingAccountSummaryDto> getSummary(
+            @Parameter(description = "Funding symbol, for example fUSD") @RequestParam(required = false) String symbol
+    ) {
+        return ResponseEntity.ok(fundingAccountSummaryService.getSummary(symbol));
+    }
+
+    @Operation(summary = "Get raw funding offers")
     @GetMapping("/offers")
     public ResponseEntity<List<FundingPositionDto>> getOffers(
-            @Parameter(description = "Funding symbol，例如 fUSD") @RequestParam(required = false) String symbol
+            @Parameter(description = "Funding symbol, for example fUSD") @RequestParam(required = false) String symbol
     ) {
         return ResponseEntity.ok(fundingAccountRestClient.getFundingOffers(symbol));
     }
 
-    @Operation(summary = "查詢放貸中的 funding credits")
+    @Operation(summary = "Get raw funding credits")
     @GetMapping("/credits")
     public ResponseEntity<List<FundingPositionDto>> getCredits(
-            @Parameter(description = "Funding symbol，例如 fUSD") @RequestParam(required = false) String symbol
+            @Parameter(description = "Funding symbol, for example fUSD") @RequestParam(required = false) String symbol
     ) {
         return ResponseEntity.ok(fundingAccountRestClient.getFundingCredits(symbol));
     }
 
-    @Operation(summary = "查詢未使用中的 funding loans")
+    @Operation(summary = "Get raw funding loans")
     @GetMapping("/loans")
     public ResponseEntity<List<FundingPositionDto>> getLoans(
-            @Parameter(description = "Funding symbol，例如 fUSD") @RequestParam(required = false) String symbol
+            @Parameter(description = "Funding symbol, for example fUSD") @RequestParam(required = false) String symbol
     ) {
         return ResponseEntity.ok(fundingAccountRestClient.getFundingLoans(symbol));
     }

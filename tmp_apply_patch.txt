@@ -1,0 +1,4 @@
+*** Begin Patch
+*** Add File: tmp_patch_test.txt
++test
+*** End Patch
