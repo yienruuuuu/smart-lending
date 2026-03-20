@@ -1,6 +1,6 @@
 # smart-lending
 
-使用 Spring Boot 3.2 建立 Bitfinex 融資放貸第一版骨架，目前改為每 10 秒輪詢一次 Bitfinex 公開 funding book，以及用 RESTful API 查詢帳戶 wallet 與公開 funding ticker；暫時不包含資料庫、私有 API 下單、部位管理與策略執行。
+使用 Spring Boot 3.2 建立 Bitfinex 融資放貸第一版骨架，目前改為每 10 秒輪詢一次 Bitfinex 公開 funding book，以及用 RESTful API 查詢帳戶 wallet、公開 funding ticker 與 lendbook 摘要；暫時不包含資料庫、私有 API 下單、部位管理與策略執行。
 
 ## 第一版內容
 
@@ -12,6 +12,8 @@
 - 提供 RESTful API 查詢 Bitfinex 帳戶 wallet 資料
 - 提供 RESTful API 查詢 funding offers、credits、loans
 - 提供 RESTful API 查詢目前 funding ticker 與 FRR
+- 提供 RESTful API 查詢 lendbook ask 匯總、FRR ask 金額與 FRR 佔比
+- 提供 RESTful API 依天數與利率小數位分桶統計 lendbook ask 總額
 - 提供 Swagger UI 方便直接測試 API
 
 ## 本機設定
@@ -70,9 +72,60 @@ POST /api/v1/funding/polling/run-once?symbol=fUSD
 
 ```http
 GET /api/v1/funding/market/ticker?symbol=fUSD
+GET /api/v1/funding/market/lendbook/summary?currency=USD&limitAsks=10000&minPeriodExclusive=30
+GET /api/v1/funding/market/lendbook/rate-distribution?currency=USD&period=30&limitAsks=10000&rateScale=1
 ```
 
-這支 API 會呼叫 Bitfinex 官方 public REST endpoint `GET /v2/ticker/{Symbol}`，其中 funding ticker 的 `FRR` 來自回傳陣列第 1 個欄位，`FRR_AMOUNT_AVAILABLE` 來自第 16 個欄位。
+`/api/v1/funding/market/ticker` 會呼叫 Bitfinex 官方 public REST endpoint `GET /v2/ticker/{Symbol}`，其中 funding ticker 的 `FRR` 來自回傳陣列第 1 個欄位，`FRR_AMOUNT_AVAILABLE` 來自第 16 個欄位。
+
+`/api/v1/funding/market/lendbook/summary` 會呼叫 Bitfinex v1 public REST endpoint `GET /v1/lendbook/{currency}`，並額外參考 `GET /v2/ticker/{Symbol}`。回傳欄位分成兩種口徑：
+
+- `minPeriodExclusive`: 只統計 `period > 這個值` 的 asks；例如 `30` 代表只保留 `period > 30`
+- `frrAskAmountFromBook`: 直接依 `lendbook asks` 內 `frr=yes` 加總
+- `fixedRateAskAmountFromBook`: 直接依 `lendbook asks` 內 `frr!=yes` 加總
+- `amountBeforeFirstFrrAsk`: 依利率排序的 asks 中，第一筆 FRR 之前所有 amount 的累計
+- `frrAmountAvailableFromTicker`: funding ticker 的 `FRR_AMOUNT_AVAILABLE`
+- `nonFrrOrderBookAmountByTicker`: `totalAskAmount - frrAmountAvailableFromTicker`
+
+`/api/v1/funding/market/lendbook/rate-distribution` 會直接統計 `v1 lendbook` asks：
+
+- `period`: 只保留該天數的訂單，例如 `30`
+- `limitAsks`: 最多讀取多少筆 asks
+- `rateScale`: 利率四捨五入到幾位小數，例如 `1` 會把 `14.64` 歸到 `14.6`
+- `buckets[].roundedRate`: 分桶後利率
+- `buckets[].totalAmount`: 該利率桶總額
+- `buckets[].amountSharePercent`: 該利率桶金額占比
+
+例如回傳可長這樣：
+
+```json
+{
+  "currency": "USD",
+  "period": 30,
+  "limitAsks": 10000,
+  "rateScale": 1,
+  "matchedAskCount": 5,
+  "matchedTotalAmount": 11000000,
+  "buckets": [
+    {
+      "roundedRate": 14.6,
+      "orderCount": 2,
+      "totalAmount": 3000000,
+      "amountShareRatio": 0.27272727,
+      "amountSharePercent": 27.27
+    },
+    {
+      "roundedRate": 14.7,
+      "orderCount": 3,
+      "totalAmount": 8000000,
+      "amountShareRatio": 0.72727273,
+      "amountSharePercent": 72.73
+    }
+  ]
+}
+```
+
+注意：這些市場 API 反映的是目前查回的 lendbook ask snapshot，不是已成交借出的總額。
 
 帳戶查詢 API：
 
@@ -106,10 +159,9 @@ Funding 相關 API 分別對應官方：
 - `src/main/java/.../SmartLendingApplication.java`: 啟動點、`.env` 載入與排程啟用
 - `src/main/java/.../config/BitfinexProperties.java`: Bitfinex 設定綁定
 - `src/main/java/.../service/BitfinexFundingPollingService.java`: funding book 排程輪詢
-- `src/main/java/.../service/BitfinexFundingMarketRestClient.java`: Bitfinex public funding ticker client
+- `src/main/java/.../service/BitfinexFundingMarketRestClient.java`: Bitfinex public funding ticker and lendbook client
 - `src/main/java/.../service/BitfinexAccountRestClient.java`: Bitfinex authenticated REST client
-- `src/main/java/.../controller/FundingMarketController.java`: funding ticker / FRR REST API
-- `src/main/java/.../controller/AccountController.java`: 帳戶資料 REST API
+- `src/main/java/.../controller/FundingMarketController.java`: funding ticker / FRR / lendbook summary REST API
 - `src/main/resources/logback-spring.xml`: Logback 設定
 - `src/main/resources/application.yml`: 預設設定值
 
