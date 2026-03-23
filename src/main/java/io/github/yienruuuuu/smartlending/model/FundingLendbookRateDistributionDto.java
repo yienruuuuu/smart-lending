@@ -5,7 +5,8 @@ import java.util.List;
 
 public record FundingLendbookRateDistributionDto(
         String currency,
-        Integer period,
+        Integer minPeriod,
+        Integer maxPeriod,
         int limitAsks,
         int rateScale,
         int matchedAskCount,

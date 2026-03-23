@@ -2,7 +2,6 @@ package io.github.yienruuuuu.smartlending.controller;
 
 import io.github.yienruuuuu.smartlending.model.FundingLendbookRateDistributionDto;
 import io.github.yienruuuuu.smartlending.model.FundingLendbookSummaryDto;
-import io.github.yienruuuuu.smartlending.model.FundingRateBucketDto;
 import io.github.yienruuuuu.smartlending.model.FundingTickerDto;
 import io.github.yienruuuuu.smartlending.service.BitfinexFundingMarketRestClient;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "Funding Market", description = "Bitfinex public funding market endpoints")
+@Tag(name = "Funding Market", description = "Bitfinex 公開 funding 市場查詢 API")
 @RestController
 @RequestMapping("/api/v1/funding/market")
 public class FundingMarketController {
@@ -25,39 +24,41 @@ public class FundingMarketController {
         this.fundingMarketRestClient = fundingMarketRestClient;
     }
 
-    @Operation(summary = "Get current Bitfinex funding ticker, including FRR")
+    @Operation(summary = "查詢目前 Bitfinex funding ticker，包含 FRR")
     @GetMapping("/ticker")
     public ResponseEntity<FundingTickerDto> getTicker(
-            @Parameter(description = "Funding symbol, for example fUSD") @RequestParam(required = false) String symbol
+            @Parameter(description = "Funding symbol，例如 fUSD") @RequestParam(required = false) String symbol
     ) {
         return ResponseEntity.ok(fundingMarketRestClient.getFundingTicker(symbol));
     }
 
-    @Operation(summary = "Get current lendbook ask summary: total asks, FRR asks, fixed-rate asks")
+    @Operation(summary = "查詢目前 lendbook ask 摘要：總量、FRR 掛單與固定利率掛單")
     @GetMapping("/lendbook/summary")
     public ResponseEntity<FundingLendbookSummaryDto> getLendbookSummary(
-            @Parameter(description = "Funding currency, for example USD or fUSD")
+            @Parameter(description = "Funding 幣別，例如 USD 或 fUSD")
             @RequestParam(required = false) String currency,
-            @Parameter(description = "Number of ask rows to include from Bitfinex v1 lendbook, default 10000")
+            @Parameter(description = "要納入統計的 Bitfinex v1 lendbook ask 筆數上限，預設 10000")
             @RequestParam(required = false) Integer limitAsks,
-            @Parameter(description = "Only include asks with period strictly greater than this value, for example 30 means period > 30")
+            @Parameter(description = "只保留 period 嚴格大於此值的 asks，例如 30 代表只保留 period > 30")
             @RequestParam(required = false) Integer minPeriodExclusive
     ) {
         return ResponseEntity.ok(fundingMarketRestClient.getFundingLendbookSummary(currency, limitAsks, minPeriodExclusive));
     }
 
-    @Operation(summary = "Group lendbook asks by rounded rate after filtering by period strictly greater than the given value")
+    @Operation(summary = "依利率分桶統計 lendbook asks，並可依 period 區間過濾")
     @GetMapping("/lendbook/rate-distribution")
     public ResponseEntity<FundingLendbookRateDistributionDto> getLendbookRateDistribution(
-            @Parameter(description = "Funding currency, for example USD or fUSD")
+            @Parameter(example = "USD", description = "Funding 幣別，例如 USD")
             @RequestParam(required = false) String currency,
-            @Parameter(description = "Only include asks with period strictly greater than this value, for example 30 means period > 30")
-            @RequestParam(required = false) Integer period,
-            @Parameter(description = "Number of ask rows to include from Bitfinex v1 lendbook, default 10000")
+            @Parameter(example = "30", description = "只保留 period 大於等於此值的 asks")
+            @RequestParam(required = false) Integer minPeriod,
+            @Parameter(example = "120", description = "只保留 period 小於等於此值的 asks")
+            @RequestParam(required = false) Integer maxPeriod,
+            @Parameter(example = "10000", description = "要納入統計的 Bitfinex v1 lendbook ask 筆數上限，預設 10000")
             @RequestParam(required = false) Integer limitAsks,
-            @Parameter(description = "Decimal places used to round rate buckets, for example 1 means 14.6, 14.7")
+            @Parameter(example = "1", description = "利率分桶時保留的小數位數，例如 1 代表 14.6、14.7")
             @RequestParam(required = false) Integer rateScale
     ) {
-        return ResponseEntity.ok(fundingMarketRestClient.getFundingLendbookRateDistribution(currency, period, limitAsks, rateScale));
+        return ResponseEntity.ok(fundingMarketRestClient.getFundingLendbookRateDistribution(currency, minPeriod, maxPeriod, limitAsks, rateScale));
     }
 }

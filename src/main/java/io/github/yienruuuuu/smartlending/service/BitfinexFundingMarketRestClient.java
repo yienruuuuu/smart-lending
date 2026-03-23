@@ -43,8 +43,8 @@ public class BitfinexFundingMarketRestClient {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restTemplate = restTemplateBuilder
-                .setConnectTimeout(Duration.ofSeconds(10))
-                .setReadTimeout(Duration.ofSeconds(15))
+                .setConnectTimeout(Duration.ofSeconds(properties.getMarketConnectTimeoutSeconds()))
+                .setReadTimeout(Duration.ofSeconds(properties.getMarketReadTimeoutSeconds()))
                 .build();
     }
 
@@ -163,10 +163,13 @@ public class BitfinexFundingMarketRestClient {
 
     public FundingLendbookRateDistributionDto getFundingLendbookRateDistribution(
             String currency,
-            Integer period,
+            Integer minPeriod,
+            Integer maxPeriod,
             Integer limitAsks,
             Integer rateScale
     ) {
+        validatePeriodRange(minPeriod, maxPeriod);
+
         String resolvedCurrency = normalizeCurrency(currency);
         int resolvedLimitAsks = normalizeLimitAsks(limitAsks);
         int resolvedRateScale = normalizeRateScale(rateScale);
@@ -180,7 +183,7 @@ public class BitfinexFundingMarketRestClient {
 
             for (JsonNode ask : asks) {
                 int askPeriod = ask.path("period").asInt();
-                if (shouldSkipByDistributionPeriod(askPeriod, period)) {
+                if (shouldSkipByPeriodRange(askPeriod, minPeriod, maxPeriod)) {
                     continue;
                 }
 
@@ -218,12 +221,13 @@ public class BitfinexFundingMarketRestClient {
                 ));
             }
 
-            log.info("Fetched funding lendbook rate distribution: currency={}, periodExclusive={}, limitAsks={}, rateScale={}, matchedAskCount={}, bucketCount={}",
-                    resolvedCurrency, period, resolvedLimitAsks, resolvedRateScale, matchedAskCount, bucketDtos.size());
+            log.info("Fetched funding lendbook rate distribution: currency={}, minPeriod={}, maxPeriod={}, limitAsks={}, rateScale={}, matchedAskCount={}, bucketCount={}",
+                    resolvedCurrency, minPeriod, maxPeriod, resolvedLimitAsks, resolvedRateScale, matchedAskCount, bucketDtos.size());
 
             return new FundingLendbookRateDistributionDto(
                     resolvedCurrency,
-                    period,
+                    minPeriod,
+                    maxPeriod,
                     resolvedLimitAsks,
                     resolvedRateScale,
                     matchedAskCount,
@@ -232,7 +236,8 @@ public class BitfinexFundingMarketRestClient {
                     bucketDtos
             );
         } catch (RestClientException exception) {
-            log.error("Bitfinex lendbook distribution request failed: currency={}, url={}", resolvedCurrency, url, exception);
+            log.error("Bitfinex lendbook distribution request failed: currency={}, url={}, connectTimeoutSeconds={}, readTimeoutSeconds={}",
+                    resolvedCurrency, url, properties.getMarketConnectTimeoutSeconds(), properties.getMarketReadTimeoutSeconds(), exception);
             throw new IllegalStateException("Bitfinex lendbook distribution request failed", exception);
         } catch (Exception exception) {
             log.error("Failed to parse Bitfinex lendbook distribution: currency={}, url={}", resolvedCurrency, url, exception);
@@ -302,8 +307,15 @@ public class BitfinexFundingMarketRestClient {
         return minPeriodExclusive != null && period <= minPeriodExclusive;
     }
 
-    private boolean shouldSkipByDistributionPeriod(int askPeriod, Integer periodExclusive) {
-        return periodExclusive != null && askPeriod <= periodExclusive;
+    private boolean shouldSkipByPeriodRange(int askPeriod, Integer minPeriod, Integer maxPeriod) {
+        return (minPeriod != null && askPeriod < minPeriod)
+                || (maxPeriod != null && askPeriod > maxPeriod);
+    }
+
+    private void validatePeriodRange(Integer minPeriod, Integer maxPeriod) {
+        if (minPeriod != null && maxPeriod != null && minPeriod > maxPeriod) {
+            throw new IllegalArgumentException("minPeriod must be less than or equal to maxPeriod");
+        }
     }
 
     private boolean isFrrOffer(String frr) {

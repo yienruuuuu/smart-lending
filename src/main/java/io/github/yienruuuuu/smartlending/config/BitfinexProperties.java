@@ -2,7 +2,6 @@ package io.github.yienruuuuu.smartlending.config;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -19,16 +18,11 @@ public class BitfinexProperties {
     @NotBlank
     private String publicBaseUrl = "https://api-pub.bitfinex.com";
 
-    private List<String> fundingSymbols = List.of("fUSD");
-
-    @NotBlank
-    private String bookPrecision = "R0";
+    @Min(1)
+    private int marketConnectTimeoutSeconds = 10;
 
     @Min(1)
-    private int bookLength = 25;
-
-    @Min(1)
-    private int pollingIntervalSeconds = 10;
+    private int marketReadTimeoutSeconds = 30;
 
     public String getApiKey() {
         return apiKey;
@@ -62,35 +56,19 @@ public class BitfinexProperties {
         this.publicBaseUrl = publicBaseUrl;
     }
 
-    public List<String> getFundingSymbols() {
-        return fundingSymbols;
+    public int getMarketConnectTimeoutSeconds() {
+        return marketConnectTimeoutSeconds;
     }
 
-    public void setFundingSymbols(List<String> fundingSymbols) {
-        this.fundingSymbols = fundingSymbols;
+    public void setMarketConnectTimeoutSeconds(int marketConnectTimeoutSeconds) {
+        this.marketConnectTimeoutSeconds = marketConnectTimeoutSeconds;
     }
 
-    public String getBookPrecision() {
-        return bookPrecision;
+    public int getMarketReadTimeoutSeconds() {
+        return marketReadTimeoutSeconds;
     }
 
-    public void setBookPrecision(String bookPrecision) {
-        this.bookPrecision = bookPrecision;
-    }
-
-    public int getBookLength() {
-        return bookLength;
-    }
-
-    public void setBookLength(int bookLength) {
-        this.bookLength = bookLength;
-    }
-
-    public int getPollingIntervalSeconds() {
-        return pollingIntervalSeconds;
-    }
-
-    public void setPollingIntervalSeconds(int pollingIntervalSeconds) {
-        this.pollingIntervalSeconds = pollingIntervalSeconds;
+    public void setMarketReadTimeoutSeconds(int marketReadTimeoutSeconds) {
+        this.marketReadTimeoutSeconds = marketReadTimeoutSeconds;
     }
 }

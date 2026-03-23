@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.yienruuuuu.smartlending.model.CancelFundingOfferRequest;
+import io.github.yienruuuuu.smartlending.model.CreateFundingOfferRequest;
+import io.github.yienruuuuu.smartlending.model.FundingOfferActionDto;
 import io.github.yienruuuuu.smartlending.model.FundingPositionDto;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Component;
 public class BitfinexFundingAccountRestClient {
 
     private static final Logger log = LoggerFactory.getLogger(BitfinexFundingAccountRestClient.class);
+    private static final String DEFAULT_OFFER_TYPE = "LIMIT";
 
     private final BitfinexAccountRestClient bitfinexAccountRestClient;
     private final ObjectMapper objectMapper;
@@ -39,6 +43,29 @@ public class BitfinexFundingAccountRestClient {
         return fetchFundingPositions("loans", symbol);
     }
 
+    public FundingOfferActionDto createFundingOffer(CreateFundingOfferRequest request) {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("type", normalizeOfferType(request.type()));
+        body.put("symbol", request.symbol().trim());
+        body.put("amount", request.amount().trim());
+        body.put("rate", request.rate().trim());
+        body.put("period", request.period());
+        body.put("flags", normalizeFlags(request.flags()));
+
+        JsonNode raw = bitfinexAccountRestClient.postAuthenticated("v2/auth/w/funding/offer/submit", body.toString());
+        log.info("Submitted funding offer: symbol={}, amount={}, rate={}, period={}", request.symbol(), request.amount(), request.rate(), request.period());
+        return new FundingOfferActionDto("submit", raw, decodeFundingOfferAction(raw));
+    }
+
+    public FundingOfferActionDto cancelFundingOffer(CancelFundingOfferRequest request) {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("id", request.offerId());
+
+        JsonNode raw = bitfinexAccountRestClient.postAuthenticated("v2/auth/w/funding/offer/cancel", body.toString());
+        log.info("Canceled funding offer: offerId={}", request.offerId());
+        return new FundingOfferActionDto("cancel", raw, decodeFundingOfferAction(raw));
+    }
+
     private List<FundingPositionDto> fetchFundingPositions(String type, String symbol) {
         String apiPath = symbol == null || symbol.isBlank()
                 ? "v2/auth/r/funding/%s".formatted(type)
@@ -61,6 +88,27 @@ public class BitfinexFundingAccountRestClient {
 
         log.info("Fetched funding {} rows: symbol={}, count={}", type, symbol, positions.size());
         return positions;
+    }
+
+    private JsonNode decodeFundingOfferAction(JsonNode root) {
+        if (!root.isArray()) {
+            return root.deepCopy();
+        }
+
+        ObjectNode decoded = objectMapper.createObjectNode();
+        decoded.put("notificationMts", root.path(0).asLong());
+        decoded.put("notificationType", root.path(1).asText());
+        decoded.put("messageId", root.path(2).asLong());
+        decoded.put("status", root.path(6).asText());
+        decoded.put("text", root.path(7).asText());
+
+        JsonNode payload = root.path(4);
+        if (payload.isArray()) {
+            decoded.set("offer", decodeFundingPosition("offers", payload));
+        } else {
+            decoded.set("payload", payload.deepCopy());
+        }
+        return decoded;
     }
 
     private JsonNode decodeFundingPosition(String type, JsonNode item) {
@@ -110,5 +158,16 @@ public class BitfinexFundingAccountRestClient {
 
         decoded.set("rawFieldOrder", rawFieldOrder);
         return decoded;
+    }
+
+    private String normalizeOfferType(String type) {
+        if (type == null || type.isBlank()) {
+            return DEFAULT_OFFER_TYPE;
+        }
+        return type.trim().toUpperCase();
+    }
+
+    private int normalizeFlags(Integer flags) {
+        return flags == null ? 0 : flags;
     }
 }

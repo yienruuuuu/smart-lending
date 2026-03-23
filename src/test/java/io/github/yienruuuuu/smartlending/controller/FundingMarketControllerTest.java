@@ -102,6 +102,7 @@ class FundingMarketControllerTest {
     void shouldReturnFundingLendbookRateDistribution() throws Exception {
         FundingLendbookRateDistributionDto dto = new FundingLendbookRateDistributionDto(
                 "USD",
+                2,
                 30,
                 10000,
                 1,
@@ -114,16 +115,18 @@ class FundingMarketControllerTest {
                 )
         );
 
-        when(fundingMarketRestClient.getFundingLendbookRateDistribution("USD", 30, 10000, 1)).thenReturn(dto);
+        when(fundingMarketRestClient.getFundingLendbookRateDistribution("USD", 2, 30, 10000, 1)).thenReturn(dto);
 
         mockMvc.perform(get("/api/v1/funding/market/lendbook/rate-distribution")
                         .param("currency", "USD")
-                        .param("period", "30")
+                        .param("minPeriod", "2")
+                        .param("maxPeriod", "30")
                         .param("limitAsks", "10000")
                         .param("rateScale", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currency").value("USD"))
-                .andExpect(jsonPath("$.period").value(30))
+                .andExpect(jsonPath("$.minPeriod").value(2))
+                .andExpect(jsonPath("$.maxPeriod").value(30))
                 .andExpect(jsonPath("$.rateScale").value(1))
                 .andExpect(jsonPath("$.matchedAskCount").value(5))
                 .andExpect(jsonPath("$.matchedTotalAmount").value(11000000))
@@ -138,6 +141,6 @@ class FundingMarketControllerTest {
                 .andExpect(jsonPath("$.buckets[1].cumulativeSharePercent").value(100.00))
                 .andExpect(jsonPath("$.buckets[1].isFrr").value(true));
 
-        verify(fundingMarketRestClient).getFundingLendbookRateDistribution("USD", 30, 10000, 1);
+        verify(fundingMarketRestClient).getFundingLendbookRateDistribution("USD", 2, 30, 10000, 1);
     }
 }
