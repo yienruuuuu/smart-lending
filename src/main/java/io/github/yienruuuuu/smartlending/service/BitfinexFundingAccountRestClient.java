@@ -104,7 +104,7 @@ public class BitfinexFundingAccountRestClient {
             ));
         }
 
-        log.info("已取得 funding 資料。type={}, symbol={}, count={}", type, symbol, positions.size());
+        log.debug("已取得 funding 資料。type={}, symbol={}, count={}", type, symbol, positions.size());
         return positions;
     }
 

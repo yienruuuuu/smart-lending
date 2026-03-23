@@ -22,7 +22,8 @@ import org.springframework.stereotype.Service;
  * <p>流程如下：
  * <ol>
  *   <li>查詢指定條件的 funding rate-distribution</li>
- *   <li>找到第一筆 cumulativeSharePercent 大於門檻值時的前一筆利率</li>
+ *   <li>找到第一筆 cumulativeSharePercent 大於門檻值的利率 bucket</li>
+ *   <li>將該筆利率減 0.01，作為本次目標年化利率</li>
  *   <li>若利率小於等於 10，則結束本次操作</li>
  *   <li>若利率大於 10，則查詢目前帳號 funding 狀態</li>
  *   <li>若可重新掛單金額為 0，視為都在放貸中，結束本次操作</li>
@@ -46,6 +47,7 @@ public class FundingRateThresholdSchedulerService {
     private static final BigDecimal MIN_ANNUAL_RATE_TO_ACT = new BigDecimal("10");
     private static final BigDecimal DAYS_PER_YEAR = new BigDecimal("365");
     private static final BigDecimal PERCENT_DIVISOR = new BigDecimal("100");
+    private static final BigDecimal RATE_OFFSET = new BigDecimal("0.01");
     private static final int TARGET_OFFER_PERIOD = 120;
     private static final String TARGET_OFFER_TYPE = "LIMIT";
     private static final int TARGET_OFFER_FLAGS = 0;
@@ -87,7 +89,7 @@ public class FundingRateThresholdSchedulerService {
 
         BigDecimal annualRate = findTargetAnnualRate(distribution.buckets());
         if (annualRate == null) {
-            log.info("本次策略結束：沒有找到 cumulativeSharePercent 大於 {} 的前一筆利率", TARGET_CUMULATIVE_SHARE_PERCENT);
+            log.info("本次策略結束：沒有找到 cumulativeSharePercent 大於 {} 的目標利率", TARGET_CUMULATIVE_SHARE_PERCENT);
             return;
         }
 
@@ -152,30 +154,22 @@ public class FundingRateThresholdSchedulerService {
     }
 
     /**
-     * 找出第一筆 cumulativeSharePercent 大於門檻值時的前一筆利率。
+     * 找出第一筆 cumulativeSharePercent 大於門檻值的 bucket，
+     * 並以該筆利率減 0.01 作為本次目標年化利率。
      */
     private BigDecimal findTargetAnnualRate(List<FundingRateBucketDto> buckets) {
-        for (int index = 0; index < buckets.size(); index++) {
-            FundingRateBucketDto current = buckets.get(index);
+        for (FundingRateBucketDto current : buckets) {
             if (current.cumulativeSharePercent().compareTo(TARGET_CUMULATIVE_SHARE_PERCENT) <= 0) {
                 continue;
             }
 
-            if (index == 0) {
-                log.info("第一筆 bucket 就已超過 cumulativeSharePercent 門檻，沒有前一筆可取。thresholdPercent={}, currentRate={}, currentCumulativeSharePercent={}",
-                        TARGET_CUMULATIVE_SHARE_PERCENT,
-                        current.roundedRate(),
-                        current.cumulativeSharePercent());
-                return null;
-            }
-
-            FundingRateBucketDto previous = buckets.get(index - 1);
-            log.info("找到策略目標利率：thresholdPercent={}, annualRate={}, nextRate={}, nextCumulativeSharePercent={}",
+            BigDecimal targetAnnualRate = current.roundedRate().subtract(RATE_OFFSET).setScale(2, RoundingMode.HALF_UP);
+            log.info("找到策略目標利率：thresholdPercent={}, nextRate={}, targetAnnualRate={}, nextCumulativeSharePercent={}",
                     TARGET_CUMULATIVE_SHARE_PERCENT,
-                    previous.roundedRate(),
                     current.roundedRate(),
+                    targetAnnualRate,
                     current.cumulativeSharePercent());
-            return previous.roundedRate();
+            return targetAnnualRate;
         }
 
         return null;

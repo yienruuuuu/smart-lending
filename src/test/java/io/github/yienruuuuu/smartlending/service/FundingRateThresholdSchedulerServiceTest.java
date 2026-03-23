@@ -38,8 +38,8 @@ class FundingRateThresholdSchedulerServiceTest {
     void shouldStopWhenAnnualRateIsLessThanOrEqualToTen() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
-                        bucket("9.9", "4.90"),
-                        bucket("10.1", "5.10")
+                        bucket("10.00", "4.90"),
+                        bucket("10.01", "5.10")
                 ));
 
         service.pollTargetFundingRate();
@@ -52,8 +52,8 @@ class FundingRateThresholdSchedulerServiceTest {
     void shouldStopWhenAllFundsAreAlreadyLent() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
-                        bucket("10.5", "4.90"),
-                        bucket("10.7", "5.10")
+                        bucket("10.51", "4.90"),
+                        bucket("10.52", "5.10")
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD")).thenReturn(summary(BigDecimal.ZERO, BigDecimal.ZERO, List.of()));
 
@@ -67,13 +67,13 @@ class FundingRateThresholdSchedulerServiceTest {
     void shouldStopWhenExistingOfferAlreadyHasSameRate() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
-                        bucket("11.2", "4.90"),
-                        bucket("11.3", "5.10")
+                        bucket("11.31", "4.90"),
+                        bucket("11.32", "5.10")
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD")).thenReturn(summary(
                 new BigDecimal("300"),
                 new BigDecimal("700"),
-                List.of(openOffer(12345L, "0.00030685"))
+                List.of(openOffer(12345L, "0.00030986"))
         ));
 
         service.pollTargetFundingRate();
@@ -86,8 +86,8 @@ class FundingRateThresholdSchedulerServiceTest {
     void shouldStopWhenOffersStillExistAfterWaiting() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
-                        bucket("17.1", "4.90"),
-                        bucket("17.3", "5.10")
+                        bucket("17.11", "4.90"),
+                        bucket("17.12", "5.10")
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD"))
                 .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000"))))
@@ -103,8 +103,8 @@ class FundingRateThresholdSchedulerServiceTest {
     void shouldCancelExistingOffersAndCreateNewOneAfterRefresh() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
-                        bucket("17.1", "4.90"),
-                        bucket("17.3", "5.10")
+                        bucket("11.31", "4.90"),
+                        bucket("11.32", "5.10")
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD"))
                 .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000"))))
@@ -116,7 +116,7 @@ class FundingRateThresholdSchedulerServiceTest {
         verify(fundingAccountRestClient).createFundingOffer(argThat(request ->
                 "fUSD".equals(request.symbol())
                         && "1000".equals(request.amount())
-                        && "0.00046849".equals(request.rate())
+                        && "0.00030986".equals(request.rate())
                         && request.period().equals(120)
                         && "LIMIT".equals(request.type())
                         && request.flags().equals(0)
@@ -135,7 +135,7 @@ class FundingRateThresholdSchedulerServiceTest {
                 60,
                 120,
                 10000,
-                1,
+                2,
                 buckets.length,
                 new BigDecimal("1000"),
                 "https://api.bitfinex.com/v1/lendbook/USD?limit_bids=0&limit_asks=10000",
