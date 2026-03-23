@@ -65,7 +65,7 @@ class FundingRateThresholdSchedulerServiceTest {
     }
 
     @Test
-    void shouldStopWhenExistingOfferAlreadyHasSameRate() {
+    void shouldCreateOffersWhenExistingOfferAlreadyHasSameRateAndIdleAmountIsEnough() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
                         bucket("11.31", "4.90"),
@@ -74,25 +74,62 @@ class FundingRateThresholdSchedulerServiceTest {
         when(fundingAccountSummaryService.getSummary("fUSD")).thenReturn(summary(
                 new BigDecimal("300"),
                 new BigDecimal("700"),
-                List.of(openOffer(12345L, "0.00030986"))
+                List.of(openOffer(12345L, "0.00030986", "150"))
         ));
 
         service.pollTargetFundingRate();
 
         verify(fundingAccountRestClient, never()).cancelFundingOffer(argThat(item -> true));
-        verify(fundingAccountRestClient, never()).createFundingOffer(argThat(item -> true));
+        verify(fundingAccountRestClient, times(2)).createFundingOffer(argThat(request ->
+                "fUSD".equals(request.symbol())
+                        && "150".equals(request.amount())
+                        && "0.00030986".equals(request.rate())
+                        && request.period().equals(120)
+                        && "LIMIT".equals(request.type())
+                        && request.flags().equals(0)
+        ));
     }
 
     @Test
-    void shouldStopWhenOffersStillExistAfterWaiting() {
+    void shouldCancelOneOfferAndCreateMergedOfferWhenSameRateExistsButIdleAmountIsInsufficient() {
+        when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
+                .thenReturn(distribution(
+                        bucket("11.31", "4.90"),
+                        bucket("11.32", "5.10")
+                ));
+        when(fundingAccountSummaryService.getSummary("fUSD"))
+                .thenReturn(summary(new BigDecimal("20"), new BigDecimal("330"), List.of(
+                        openOffer(12345L, "0.00030986", "150"),
+                        openOffer(67890L, "0.00030986", "180")
+                )))
+                .thenReturn(summary(new BigDecimal("170"), new BigDecimal("180"), List.of(
+                        openOffer(67890L, "0.00030986", "180")
+                )));
+
+        service.pollTargetFundingRate();
+
+        verify(fundingAccountRestClient).cancelFundingOffer(argThat(request -> request.offerId().equals(12345L)));
+        verify(fundingAccountRestClient, times(1)).createFundingOffer(argThat(request ->
+                "fUSD".equals(request.symbol())
+                        && "170".equals(request.amount())
+                        && "0.00030986".equals(request.rate())
+                        && request.period().equals(120)
+                        && "LIMIT".equals(request.type())
+                        && request.flags().equals(0)
+        ));
+        verify(fundingAccountRestClient, times(1)).createFundingOffer(any());
+    }
+
+    @Test
+    void shouldStopWhenOffersStillExistAfterWaitingForFullReprice() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
                         bucket("17.11", "4.90"),
                         bucket("17.12", "5.10")
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD"))
-                .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000"))))
-                .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000"))));
+                .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000", "700"))))
+                .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000", "700"))));
 
         service.pollTargetFundingRate();
 
@@ -108,7 +145,7 @@ class FundingRateThresholdSchedulerServiceTest {
                         bucket("11.32", "5.10")
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD"))
-                .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000"))))
+                .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000", "700"))))
                 .thenReturn(summary(new BigDecimal("480"), BigDecimal.ZERO, List.of()));
 
         service.pollTargetFundingRate();
@@ -154,6 +191,22 @@ class FundingRateThresholdSchedulerServiceTest {
                         && request.flags().equals(0)
         ));
         verify(fundingAccountRestClient, times(1)).createFundingOffer(any());
+    }
+
+    @Test
+    void shouldStopWhenIdleAmountIsInsufficientAndNoOfferCanBeAdjusted() {
+        when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
+                .thenReturn(distribution(
+                        bucket("11.31", "4.90"),
+                        bucket("11.32", "5.10")
+                ));
+        when(fundingAccountSummaryService.getSummary("fUSD"))
+                .thenReturn(summary(new BigDecimal("149"), BigDecimal.ZERO, List.of()));
+
+        service.pollTargetFundingRate();
+
+        verify(fundingAccountRestClient, never()).cancelFundingOffer(argThat(item -> true));
+        verify(fundingAccountRestClient, never()).createFundingOffer(argThat(item -> true));
     }
 
     private BitfinexProperties properties() {
@@ -216,11 +269,12 @@ class FundingRateThresholdSchedulerServiceTest {
         );
     }
 
-    private FundingPositionDto openOffer(long offerId, String rate) {
+    private FundingPositionDto openOffer(long offerId, String rate, String amount) {
         ObjectMapper objectMapper = new ObjectMapper();
         ObjectNode decoded = objectMapper.createObjectNode();
         decoded.put("id", offerId);
         decoded.put("rate", rate);
+        decoded.put("amount", amount);
         ArrayNode raw = objectMapper.createArrayNode();
         return new FundingPositionDto("offers", "fUSD", raw, decoded);
     }

@@ -11,6 +11,7 @@ import io.github.yienruuuuu.smartlending.model.FundingRateBucketDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +27,10 @@ import org.springframework.stereotype.Service;
  *   <li>找到第一筆 cumulativeSharePercent 大於門檻值的利率 bucket</li>
  *   <li>將該筆利率減 0.01，作為本次目標年化利率</li>
  *   <li>若利率小於等於 10，則結束本次操作</li>
- *   <li>若利率大於 10，則查詢目前帳號 funding 狀態</li>
- *   <li>若可重新掛單金額為 0，視為都在放貸中，結束本次操作</li>
- *   <li>若目前已存在相同利率的掛單，則不重複操作</li>
- *   <li>若有未成交掛單，先全部取消，等待交易所同步後重新查詢狀態</li>
- *   <li>確認掛單已清空且可用餘額已回來後，依 150 USD 基本單位拆成多筆 120 天訂單掛出</li>
+ *   <li>若已有相同利率掛單，優先處理 funding wallet 的閒置資金</li>
+ *   <li>若閒置資金達 150 USD，則直接拆單掛出</li>
+ *   <li>若閒置資金不足 150 USD，則取消一筆既有掛單，等待資金回補後再掛出</li>
+ *   <li>若沒有相同利率掛單，則沿用整批取消重掛流程，將既有掛單換到新利率</li>
  * </ol>
  */
 @Service
@@ -42,7 +42,7 @@ public class FundingRateThresholdSchedulerService {
     private static final String TARGET_CURRENCY = "USD";
     private static final int TARGET_MIN_PERIOD = 60;
     private static final int TARGET_MAX_PERIOD = 120;
-    private static final int TARGET_LIMIT_ASKS = 20000;
+    private static final int TARGET_LIMIT_ASKS = 10000;
     private static final int TARGET_RATE_SCALE = 2;
     private static final BigDecimal TARGET_CUMULATIVE_SHARE_PERCENT = new BigDecimal("5.0");
     private static final BigDecimal MIN_ANNUAL_RATE_TO_ACT = new BigDecimal("10");
@@ -113,10 +113,7 @@ public class FundingRateThresholdSchedulerService {
         }
 
         if (hasOfferWithSameRate(summary.offers(), targetDailyRate)) {
-            log.info("本次策略結束：目前已存在相同利率的 funding 掛單。symbol={}, dailyRate={}, annualRate={}",
-                    TARGET_SYMBOL,
-                    targetDailyRate.stripTrailingZeros().toPlainString(),
-                    annualRate);
+            handleSameRateOffers(summary, annualRate, targetDailyRate);
             return;
         }
 
@@ -133,10 +130,11 @@ public class FundingRateThresholdSchedulerService {
             }
 
             BigDecimal refreshedIdleAmount = nullSafe(refreshedSummary.idleAmount());
-            if (refreshedIdleAmount.compareTo(BigDecimal.ZERO) <= 0) {
-                log.info("本次策略結束：取消掛單後可用餘額尚未回來，暫不重新掛單。symbol={}, idleAmount={}",
+            if (!isOrderableAmount(refreshedIdleAmount)) {
+                log.info("本次策略結束：取消掛單後可直接下單的閒置資金不足。symbol={}, idleAmount={}, minimumAmount={}",
                         TARGET_SYMBOL,
-                        refreshedSummary.idleAmount());
+                        refreshedIdleAmount.stripTrailingZeros().toPlainString(),
+                        BASE_OFFER_CHUNK_AMOUNT.stripTrailingZeros().toPlainString());
                 return;
             }
 
@@ -144,7 +142,66 @@ public class FundingRateThresholdSchedulerService {
             return;
         }
 
-        createOffers(nullSafe(summary.idleAmount()), annualRate, targetDailyRate);
+        BigDecimal idleAmount = nullSafe(summary.idleAmount());
+        if (!isOrderableAmount(idleAmount)) {
+            log.info("本次策略結束：目前閒置資金不足以直接下單，且沒有既有掛單可配合。symbol={}, idleAmount={}, minimumAmount={}",
+                    TARGET_SYMBOL,
+                    idleAmount.stripTrailingZeros().toPlainString(),
+                    BASE_OFFER_CHUNK_AMOUNT.stripTrailingZeros().toPlainString());
+            return;
+        }
+
+        createOffers(idleAmount, annualRate, targetDailyRate);
+    }
+
+    /**
+     * 已有相同利率掛單時，優先利用閒置資金補掛；若閒置資金不足，則取消一筆掛單後再重新掛出。
+     */
+    private void handleSameRateOffers(FundingAccountSummaryDto summary, BigDecimal annualRate, BigDecimal targetDailyRate) {
+        BigDecimal idleAmount = nullSafe(summary.idleAmount());
+        if (isOrderableAmount(idleAmount)) {
+            log.info("目前已有相同利率掛單，但 funding wallet 尚有可直接下單的閒置資金，將直接補掛。symbol={}, idleAmount={}, dailyRate={}, annualRate={}",
+                    TARGET_SYMBOL,
+                    idleAmount.stripTrailingZeros().toPlainString(),
+                    targetDailyRate.stripTrailingZeros().toPlainString(),
+                    annualRate);
+            createOffers(idleAmount, annualRate, targetDailyRate);
+            return;
+        }
+
+        FundingPositionDto offerToRebundle = selectOfferToRebundle(summary.offers());
+        if (offerToRebundle == null) {
+            log.info("本次策略結束：目前已存在相同利率掛單，但閒置資金不足以直接下單，且沒有可調整的掛單。symbol={}, idleAmount={}, minimumAmount={}",
+                    TARGET_SYMBOL,
+                    idleAmount.stripTrailingZeros().toPlainString(),
+                    BASE_OFFER_CHUNK_AMOUNT.stripTrailingZeros().toPlainString());
+            return;
+        }
+
+        long offerId = offerToRebundle.decoded().path("id").asLong();
+        BigDecimal offerAmount = extractOfferAmount(offerToRebundle);
+        log.info("目前已有相同利率掛單，但閒置資金不足以直接下單，將取消一筆掛單後重新整併。symbol={}, idleAmount={}, selectedOfferId={}, selectedOfferAmount={}, dailyRate={}, annualRate={}",
+                TARGET_SYMBOL,
+                idleAmount.stripTrailingZeros().toPlainString(),
+                offerId,
+                offerAmount.stripTrailingZeros().toPlainString(),
+                targetDailyRate.stripTrailingZeros().toPlainString(),
+                annualRate);
+
+        cancelOpenOffers(List.of(offerToRebundle));
+        waitForOfferSettlement();
+
+        FundingAccountSummaryDto refreshedSummary = fundingAccountSummaryService.getSummary(TARGET_SYMBOL);
+        BigDecimal refreshedIdleAmount = nullSafe(refreshedSummary.idleAmount());
+        if (!isOrderableAmount(refreshedIdleAmount)) {
+            log.info("本次策略結束：取消單筆掛單後，閒置資金仍不足以直接下單。symbol={}, idleAmount={}, minimumAmount={}",
+                    TARGET_SYMBOL,
+                    refreshedIdleAmount.stripTrailingZeros().toPlainString(),
+                    BASE_OFFER_CHUNK_AMOUNT.stripTrailingZeros().toPlainString());
+            return;
+        }
+
+        createOffers(refreshedIdleAmount, annualRate, targetDailyRate);
     }
 
     /**
@@ -199,7 +256,32 @@ public class FundingRateThresholdSchedulerService {
     }
 
     /**
-     * 取消目前所有 open funding offers。
+     * 從既有掛單中挑選一筆適合拿來整併的訂單，預設選擇金額最小的一筆以減少調整範圍。
+     */
+    private FundingPositionDto selectOfferToRebundle(List<FundingPositionDto> offers) {
+        return offers.stream()
+                .filter(item -> item.decoded().path("id").asLong() > 0)
+                .min(Comparator.comparing(this::extractOfferAmount))
+                .orElse(null);
+    }
+
+    /**
+     * 讀取掛單金額並轉成正數，供金額比較與排序使用。
+     */
+    private BigDecimal extractOfferAmount(FundingPositionDto offer) {
+        String amountText = offer.decoded().path("amount").asText("0");
+        return new BigDecimal(amountText).abs();
+    }
+
+    /**
+     * 判斷目前閒置資金是否已達可直接掛單門檻。
+     */
+    private boolean isOrderableAmount(BigDecimal amount) {
+        return nullSafe(amount).compareTo(BASE_OFFER_CHUNK_AMOUNT) >= 0;
+    }
+
+    /**
+     * 取消目前指定的 open funding offers。
      */
     private void cancelOpenOffers(List<FundingPositionDto> offers) {
         for (FundingPositionDto offer : offers) {
@@ -236,8 +318,10 @@ public class FundingRateThresholdSchedulerService {
      * 依年化利率換算 Bitfinex 下單所需的日利率小數，並依 150 USD 基本單位拆成多筆掛單。
      */
     private void createOffers(BigDecimal amount, BigDecimal annualRate, BigDecimal dailyRate) {
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            log.info("本次策略結束：可用掛單金額小於等於 0，不建立新掛單。amount={}", amount);
+        if (!isOrderableAmount(amount)) {
+            log.info("本次策略結束：可用掛單金額不足以直接下單。amount={}, minimumAmount={}",
+                    nullSafe(amount).stripTrailingZeros().toPlainString(),
+                    BASE_OFFER_CHUNK_AMOUNT.stripTrailingZeros().toPlainString());
             return;
         }
 
