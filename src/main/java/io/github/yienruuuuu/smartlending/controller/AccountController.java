@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 提供 Bitfinex 帳戶層級的查詢 API。
+ */
 @Tag(name = "Account", description = "Bitfinex 帳戶查詢 API")
 @RestController
 @RequestMapping("/api/v1/account")
@@ -21,6 +24,9 @@ public class AccountController {
         this.bitfinexAccountRestClient = bitfinexAccountRestClient;
     }
 
+    /**
+     * 查詢 Bitfinex 帳戶 wallets 資料。
+     */
     @Operation(summary = "查詢 Bitfinex 帳戶 wallets 資料")
     @GetMapping("/wallets")
     public ResponseEntity<List<WalletBalanceDto>> getWallets() {

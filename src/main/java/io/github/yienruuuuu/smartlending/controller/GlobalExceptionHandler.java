@@ -11,19 +11,31 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+/**
+ * 統一處理 API 例外，回傳一致的 BAD_REQUEST 格式。
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * 處理業務狀態錯誤。
+     */
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalState(IllegalStateException exception) {
         return badRequest(exception.getMessage());
     }
 
+    /**
+     * 處理不合法參數或流程錯誤。
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException exception) {
         return badRequest(exception.getMessage());
     }
 
+    /**
+     * 處理 Bean Validation 驗證失敗。
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleMethodArgumentNotValid(MethodArgumentNotValidException exception) {
         String message = exception.getBindingResult().getFieldErrors().stream()

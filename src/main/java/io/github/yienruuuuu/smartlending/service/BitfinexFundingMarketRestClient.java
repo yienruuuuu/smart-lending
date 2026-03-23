@@ -22,6 +22,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+/**
+ * 負責查詢 Bitfinex 公開 funding 市場資料，例如 ticker、lendbook 摘要與利率分布。
+ */
 @Component
 public class BitfinexFundingMarketRestClient {
 
@@ -48,6 +51,9 @@ public class BitfinexFundingMarketRestClient {
                 .build();
     }
 
+    /**
+     * 查詢目前 funding ticker。
+     */
     public FundingTickerDto getFundingTicker(String symbol) {
         String resolvedSymbol = normalizeSymbol(symbol);
         String url = buildTickerUrl(resolvedSymbol);
@@ -58,7 +64,7 @@ public class BitfinexFundingMarketRestClient {
             if (!root.isArray()) {
                 throw new IllegalStateException("Unexpected funding ticker response: " + responseBody);
             }
-            log.info("Fetched funding ticker: symbol={}", resolvedSymbol);
+            log.info("已取得 funding ticker。symbol={}", resolvedSymbol);
             return new FundingTickerDto(
                     resolvedSymbol,
                     decimalOrZero(root, 0),
@@ -77,14 +83,17 @@ public class BitfinexFundingMarketRestClient {
                     decimalOrZero(root, 15)
             );
         } catch (RestClientException exception) {
-            log.error("Bitfinex public ticker request failed: symbol={}, url={}", resolvedSymbol, url, exception);
+            log.error("Bitfinex 公開 ticker 請求失敗。symbol={}, url={}", resolvedSymbol, url, exception);
             throw new IllegalStateException("Bitfinex public ticker request failed", exception);
         } catch (Exception exception) {
-            log.error("Failed to parse Bitfinex funding ticker: symbol={}, url={}", resolvedSymbol, url, exception);
+            log.error("解析 Bitfinex funding ticker 失敗。symbol={}, url={}", resolvedSymbol, url, exception);
             throw new IllegalStateException("Failed to parse Bitfinex funding ticker", exception);
         }
     }
 
+    /**
+     * 查詢 lendbook ask 摘要，並計算 FRR 與固定利率掛單的總量。
+     */
     public FundingLendbookSummaryDto getFundingLendbookSummary(String currency, Integer limitAsks, Integer minPeriodExclusive) {
         String resolvedCurrency = normalizeCurrency(currency);
         String fundingSymbol = toFundingSymbol(resolvedCurrency);
@@ -132,7 +141,7 @@ public class BitfinexFundingMarketRestClient {
                     ? BigDecimal.ZERO
                     : frrAskAmountFromBook.divide(totalAskAmount, 8, RoundingMode.HALF_UP);
 
-            log.info("Fetched funding lendbook summary: currency={}, asks={}, frrAsks={}, limitAsks={}, minPeriodExclusive={}, totalAskAmount={}, frrAmountAvailable={}",
+            log.info("已取得 funding lendbook 摘要。currency={}, asks={}, frrAsks={}, limitAsks={}, minPeriodExclusive={}, totalAskAmount={}, frrAmountAvailable={}",
                     resolvedCurrency, askCount, frrAskCount, resolvedLimitAsks, minPeriodExclusive, totalAskAmount, frrAmountAvailableFromTicker);
 
             return new FundingLendbookSummaryDto(
@@ -153,14 +162,17 @@ public class BitfinexFundingMarketRestClient {
                     tickerUrl
             );
         } catch (RestClientException exception) {
-            log.error("Bitfinex lendbook request failed: currency={}, url={}", resolvedCurrency, url, exception);
+            log.error("Bitfinex lendbook 請求失敗。currency={}, url={}", resolvedCurrency, url, exception);
             throw new IllegalStateException("Bitfinex lendbook request failed", exception);
         } catch (Exception exception) {
-            log.error("Failed to parse Bitfinex lendbook: currency={}, url={}", resolvedCurrency, url, exception);
+            log.error("解析 Bitfinex lendbook 失敗。currency={}, url={}", resolvedCurrency, url, exception);
             throw new IllegalStateException("Failed to parse Bitfinex lendbook", exception);
         }
     }
 
+    /**
+     * 查詢 lendbook ask，依利率分桶並計算各 bucket 的占比與累積占比。
+     */
     public FundingLendbookRateDistributionDto getFundingLendbookRateDistribution(
             String currency,
             Integer minPeriod,
@@ -222,7 +234,7 @@ public class BitfinexFundingMarketRestClient {
                 ));
             }
 
-            log.info("Fetched funding lendbook rate distribution: currency={}, minPeriod={}, maxPeriod={}, limitAsks={}, rateScale={}, matchedAskCount={}, bucketCount={}",
+            log.info("已取得 funding lendbook 利率分布。currency={}, minPeriod={}, maxPeriod={}, limitAsks={}, rateScale={}, matchedAskCount={}, bucketCount={}",
                     resolvedCurrency, minPeriod, maxPeriod, resolvedLimitAsks, resolvedRateScale, matchedAskCount, bucketDtos.size());
 
             return new FundingLendbookRateDistributionDto(
@@ -237,11 +249,11 @@ public class BitfinexFundingMarketRestClient {
                     bucketDtos
             );
         } catch (RestClientException exception) {
-            log.error("Bitfinex lendbook distribution request failed: currency={}, url={}, connectTimeoutSeconds={}, readTimeoutSeconds={}",
+            log.error("Bitfinex lendbook 利率分布請求失敗。currency={}, url={}, connectTimeoutSeconds={}, readTimeoutSeconds={}",
                     resolvedCurrency, url, properties.getMarketConnectTimeoutSeconds(), properties.getMarketReadTimeoutSeconds(), exception);
             throw new IllegalStateException("Bitfinex lendbook distribution request failed", exception);
         } catch (Exception exception) {
-            log.error("Failed to parse Bitfinex lendbook distribution: currency={}, url={}", resolvedCurrency, url, exception);
+            log.error("解析 Bitfinex lendbook 利率分布失敗。currency={}, url={}", resolvedCurrency, url, exception);
             throw new IllegalStateException("Failed to parse Bitfinex lendbook distribution", exception);
         }
     }

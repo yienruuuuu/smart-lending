@@ -21,6 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 提供 Bitfinex 融資帳戶查詢與掛單操作 API。
+ */
 @Tag(name = "Funding Account", description = "Bitfinex 融資帳戶查詢與操作 API")
 @RestController
 @RequestMapping("/api/v1/account/funding")
@@ -37,6 +40,9 @@ public class FundingAccountController {
         this.fundingAccountSummaryService = fundingAccountSummaryService;
     }
 
+    /**
+     * 查詢 funding 摘要。
+     */
     @Operation(summary = "查詢 funding 摘要：錢包總額、已借出、閒置與掛單")
     @GetMapping("/summary")
     public ResponseEntity<FundingAccountSummaryDto> getSummary(
@@ -45,6 +51,9 @@ public class FundingAccountController {
         return ResponseEntity.ok(fundingAccountSummaryService.getSummary(symbol));
     }
 
+    /**
+     * 查詢目前未成交 funding offers。
+     */
     @Operation(summary = "查詢目前未成交 funding offers")
     @GetMapping("/offers")
     public ResponseEntity<List<FundingPositionDto>> getOffers(
@@ -53,6 +62,9 @@ public class FundingAccountController {
         return ResponseEntity.ok(fundingAccountRestClient.getFundingOffers(symbol));
     }
 
+    /**
+     * 建立一筆 funding 掛單。
+     */
     @Operation(
             summary = "建立 funding 掛單",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -76,6 +88,9 @@ public class FundingAccountController {
         return ResponseEntity.ok(fundingAccountRestClient.createFundingOffer(request));
     }
 
+    /**
+     * 取消一筆 funding 掛單。
+     */
     @Operation(
             summary = "取消 funding 掛單",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -94,6 +109,9 @@ public class FundingAccountController {
         return ResponseEntity.ok(fundingAccountRestClient.cancelFundingOffer(request));
     }
 
+    /**
+     * 查詢 funding credits。
+     */
     @Operation(summary = "查詢 funding credits")
     @GetMapping("/credits")
     public ResponseEntity<List<FundingPositionDto>> getCredits(
@@ -102,6 +120,9 @@ public class FundingAccountController {
         return ResponseEntity.ok(fundingAccountRestClient.getFundingCredits(symbol));
     }
 
+    /**
+     * 查詢 funding loans。
+     */
     @Operation(summary = "查詢 funding loans")
     @GetMapping("/loans")
     public ResponseEntity<List<FundingPositionDto>> getLoans(

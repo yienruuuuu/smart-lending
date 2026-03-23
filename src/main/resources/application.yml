@@ -9,6 +9,7 @@ bitfinex:
   public-base-url: ${BITFINEX_PUBLIC_BASE_URL:https://api-pub.bitfinex.com}
   market-connect-timeout-seconds: ${BITFINEX_MARKET_CONNECT_TIMEOUT_SECONDS:10}
   market-read-timeout-seconds: ${BITFINEX_MARKET_READ_TIMEOUT_SECONDS:30}
+  offer-resubmit-delay-millis: ${BITFINEX_OFFER_RESUBMIT_DELAY_MILLIS:3000}
 
 management:
   endpoints:

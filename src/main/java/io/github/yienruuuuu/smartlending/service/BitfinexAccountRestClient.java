@@ -25,6 +25,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+/**
+ * 負責呼叫 Bitfinex 私有 authenticated REST API，處理簽章、nonce 與基礎錯誤轉換。
+ */
 @Component
 public class BitfinexAccountRestClient {
 
@@ -51,6 +54,9 @@ public class BitfinexAccountRestClient {
         this.restBaseUrl = restBaseUrl;
     }
 
+    /**
+     * 查詢帳戶 wallets，並轉成較易閱讀的 DTO。
+     */
     public List<WalletBalanceDto> getWallets() {
         JsonNode root = postAuthenticated("v2/auth/r/wallets", "{}");
         if (!root.isArray()) {
@@ -67,10 +73,13 @@ public class BitfinexAccountRestClient {
                     decimalOrZero(walletNode, 4)
             ));
         }
-        log.info("Fetched {} wallet rows from Bitfinex REST API", wallets.size());
+        log.info("已從 Bitfinex REST API 取得 wallet 資料。count={}", wallets.size());
         return wallets;
     }
 
+    /**
+     * 送出一筆 Bitfinex 私有 POST 請求並回傳解析後 JSON。
+     */
     public JsonNode postAuthenticated(String apiPath, String body) {
         validateCredentials();
 
@@ -94,10 +103,10 @@ public class BitfinexAccountRestClient {
             ).getBody();
             return objectMapper.readTree(responseBody);
         } catch (RestClientException exception) {
-            log.error("Bitfinex REST request failed: endpoint={}", apiPath, exception);
+            log.error("Bitfinex REST 請求失敗。endpoint={}", apiPath, exception);
             throw new IllegalStateException("Bitfinex REST request failed", exception);
         } catch (Exception exception) {
-            log.error("Failed to parse Bitfinex response: endpoint={}", apiPath, exception);
+            log.error("解析 Bitfinex 回應失敗。endpoint={}", apiPath, exception);
             throw new IllegalStateException("Failed to parse Bitfinex response", exception);
         }
     }

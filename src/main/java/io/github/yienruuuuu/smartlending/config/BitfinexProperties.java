@@ -5,6 +5,11 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+/**
+ * Bitfinex 相關設定。
+ *
+ * <p>包含 REST base URL、公開市場查詢 timeout，以及取消掛單後重新下單前的等待時間。
+ */
 @Validated
 @ConfigurationProperties(prefix = "bitfinex")
 public class BitfinexProperties {
@@ -23,6 +28,9 @@ public class BitfinexProperties {
 
     @Min(1)
     private int marketReadTimeoutSeconds = 30;
+
+    @Min(0)
+    private long offerResubmitDelayMillis = 3000L;
 
     public String getApiKey() {
         return apiKey;
@@ -70,5 +78,13 @@ public class BitfinexProperties {
 
     public void setMarketReadTimeoutSeconds(int marketReadTimeoutSeconds) {
         this.marketReadTimeoutSeconds = marketReadTimeoutSeconds;
+    }
+
+    public long getOfferResubmitDelayMillis() {
+        return offerResubmitDelayMillis;
+    }
+
+    public void setOfferResubmitDelayMillis(long offerResubmitDelayMillis) {
+        this.offerResubmitDelayMillis = offerResubmitDelayMillis;
     }
 }

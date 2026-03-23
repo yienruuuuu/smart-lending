@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 提供 Bitfinex 公開 funding 市場查詢 API。
+ */
 @Tag(name = "Funding Market", description = "Bitfinex 公開 funding 市場查詢 API")
 @RestController
 @RequestMapping("/api/v1/funding/market")
@@ -24,6 +27,9 @@ public class FundingMarketController {
         this.fundingMarketRestClient = fundingMarketRestClient;
     }
 
+    /**
+     * 查詢目前 funding ticker。
+     */
     @Operation(summary = "查詢目前 Bitfinex funding ticker，包含 FRR")
     @GetMapping("/ticker")
     public ResponseEntity<FundingTickerDto> getTicker(
@@ -32,6 +38,9 @@ public class FundingMarketController {
         return ResponseEntity.ok(fundingMarketRestClient.getFundingTicker(symbol));
     }
 
+    /**
+     * 查詢 lendbook ask 摘要。
+     */
     @Operation(summary = "查詢目前 lendbook ask 摘要：總量、FRR 掛單與固定利率掛單")
     @GetMapping("/lendbook/summary")
     public ResponseEntity<FundingLendbookSummaryDto> getLendbookSummary(
@@ -45,6 +54,9 @@ public class FundingMarketController {
         return ResponseEntity.ok(fundingMarketRestClient.getFundingLendbookSummary(currency, limitAsks, minPeriodExclusive));
     }
 
+    /**
+     * 依利率分桶查詢 lendbook rate-distribution。
+     */
     @Operation(summary = "依利率分桶統計 lendbook asks，並可依 period 區間過濾")
     @GetMapping("/lendbook/rate-distribution")
     public ResponseEntity<FundingLendbookRateDistributionDto> getLendbookRateDistribution(

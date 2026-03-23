@@ -14,6 +14,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+/**
+ * 負責查詢、建立與取消 Bitfinex funding 相關部位與掛單。
+ */
 @Component
 public class BitfinexFundingAccountRestClient {
 
@@ -31,18 +34,30 @@ public class BitfinexFundingAccountRestClient {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 查詢目前 open funding offers。
+     */
     public List<FundingPositionDto> getFundingOffers(String symbol) {
         return fetchFundingPositions("offers", symbol);
     }
 
+    /**
+     * 查詢目前 funding credits。
+     */
     public List<FundingPositionDto> getFundingCredits(String symbol) {
         return fetchFundingPositions("credits", symbol);
     }
 
+    /**
+     * 查詢目前 funding loans。
+     */
     public List<FundingPositionDto> getFundingLoans(String symbol) {
         return fetchFundingPositions("loans", symbol);
     }
 
+    /**
+     * 建立一筆 funding offer。
+     */
     public FundingOfferActionDto createFundingOffer(CreateFundingOfferRequest request) {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("type", normalizeOfferType(request.type()));
@@ -53,16 +68,19 @@ public class BitfinexFundingAccountRestClient {
         body.put("flags", normalizeFlags(request.flags()));
 
         JsonNode raw = bitfinexAccountRestClient.postAuthenticated("v2/auth/w/funding/offer/submit", body.toString());
-        log.info("Submitted funding offer: symbol={}, amount={}, rate={}, period={}", request.symbol(), request.amount(), request.rate(), request.period());
+        log.info("已送出 funding 掛單。symbol={}, amount={}, rate={}, period={}", request.symbol(), request.amount(), request.rate(), request.period());
         return new FundingOfferActionDto("submit", raw, decodeFundingOfferAction(raw));
     }
 
+    /**
+     * 取消一筆 funding offer。
+     */
     public FundingOfferActionDto cancelFundingOffer(CancelFundingOfferRequest request) {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("id", request.offerId());
 
         JsonNode raw = bitfinexAccountRestClient.postAuthenticated("v2/auth/w/funding/offer/cancel", body.toString());
-        log.info("Canceled funding offer: offerId={}", request.offerId());
+        log.info("已送出 funding 掛單取消請求。offerId={}", request.offerId());
         return new FundingOfferActionDto("cancel", raw, decodeFundingOfferAction(raw));
     }
 
@@ -86,7 +104,7 @@ public class BitfinexFundingAccountRestClient {
             ));
         }
 
-        log.info("Fetched funding {} rows: symbol={}, count={}", type, symbol, positions.size());
+        log.info("已取得 funding 資料。type={}, symbol={}, count={}", type, symbol, positions.size());
         return positions;
     }
 

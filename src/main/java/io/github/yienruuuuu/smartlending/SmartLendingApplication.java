@@ -6,6 +6,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+/**
+ * Smart Lending 應用程式啟動點。
+ *
+ * <p>負責載入 `.env` 設定、啟動 Spring Boot，並開啟排程功能。
+ */
 @SpringBootApplication
 @EnableScheduling
 @ConfigurationPropertiesScan

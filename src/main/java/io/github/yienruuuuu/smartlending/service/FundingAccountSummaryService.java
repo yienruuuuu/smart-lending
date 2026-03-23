@@ -8,6 +8,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
+/**
+ * 彙整 funding wallet、offers、credits 與 loans，產出策略可直接使用的 funding 摘要。
+ */
 @Service
 public class FundingAccountSummaryService {
 
@@ -22,6 +25,9 @@ public class FundingAccountSummaryService {
         this.fundingAccountRestClient = fundingAccountRestClient;
     }
 
+    /**
+     * 查詢指定 funding symbol 的摘要資訊。
+     */
     public FundingAccountSummaryDto getSummary(String symbol) {
         String normalizedSymbol = normalizeSymbol(symbol);
         String currency = fundingCurrency(normalizedSymbol);
