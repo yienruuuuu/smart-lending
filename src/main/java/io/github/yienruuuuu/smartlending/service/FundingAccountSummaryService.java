@@ -47,6 +47,7 @@ public class FundingAccountSummaryService {
         BigDecimal positionDerivedLentAmount = creditsAmount.max(loansAmount);
         BigDecimal reconciliationDelta = walletImpliedLentAmount.subtract(positionDerivedLentAmount).abs();
 
+        // 第一版先用 wallet 與 open offers 推估已借出金額，並保留 diagnostics 方便對帳。
         FundingAccountDiagnosticsDto diagnostics = new FundingAccountDiagnosticsDto(
                 wallet.walletType(),
                 wallet.currency(),

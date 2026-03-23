@@ -12,6 +12,7 @@
 - 提供 RESTful API 查詢目前 funding ticker 與 FRR
 - 提供 RESTful API 查詢 lendbook ask 匯總、FRR ask 金額與 FRR 佔比
 - 提供 RESTful API 依期間區間與利率小數位分桶統計 lendbook ask 總額
+- 每 10 分鐘自動查詢一次特定 funding rate distribution，並記錄門檻利率
 - 提供 Swagger UI 方便直接測試 API
 
 ## 本機設定
@@ -116,6 +117,24 @@ GET /api/v1/funding/market/lendbook/rate-distribution?currency=USD&minPeriod=2&m
 }
 ```
 
+## 內部排程
+
+系統啟動後每 10 分鐘會在程式內部直接呼叫 funding rate-distribution 邏輯，不經過 HTTP：
+
+- `currency=USD`
+- `minPeriod=60`
+- `maxPeriod=120`
+- `limitAsks=10000`
+- `rateScale=1`
+
+排程會：
+
+- `log.info` 印出整份查詢結果
+- 找到第一筆 `cumulativeSharePercent > 5.0` 的 bucket
+- 取前一筆 bucket，並以 `log.info` 記錄該筆利率
+
+如果第一筆 bucket 就已經大於 `5.0`，則會記錄目前第一筆已超過門檻，沒有前一筆可取。
+
 注意：這些市場 API 反映的是目前查回的 lendbook ask snapshot，不是已成交借出的總額。
 
 帳戶查詢與操作 API：
@@ -164,10 +183,11 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 
 ## 專案結構
 
-- `src/main/java/.../SmartLendingApplication.java`: 啟動點與 `.env` 載入
+- `src/main/java/.../SmartLendingApplication.java`: 啟動點、`.env` 載入與排程啟用
 - `src/main/java/.../config/BitfinexProperties.java`: Bitfinex 設定綁定
 - `src/main/java/.../service/BitfinexFundingMarketRestClient.java`: Bitfinex public funding ticker and lendbook client
 - `src/main/java/.../service/BitfinexAccountRestClient.java`: Bitfinex authenticated REST client
+- `src/main/java/.../service/FundingRateThresholdSchedulerService.java`: 每 10 分鐘查詢 funding rate distribution 並記錄門檻利率
 - `src/main/java/.../controller/FundingMarketController.java`: funding ticker / FRR / lendbook summary REST API
 - `src/main/resources/logback-spring.xml`: Logback 設定
 - `src/main/resources/application.yml`: 預設設定值

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "Account", description = "Bitfinex account endpoints")
+@Tag(name = "Account", description = "Bitfinex 帳戶查詢 API")
 @RestController
 @RequestMapping("/api/v1/account")
 public class AccountController {
@@ -21,7 +21,7 @@ public class AccountController {
         this.bitfinexAccountRestClient = bitfinexAccountRestClient;
     }
 
-    @Operation(summary = "查詢 Bitfinex 帳戶 wallet 資料")
+    @Operation(summary = "查詢 Bitfinex 帳戶 wallets 資料")
     @GetMapping("/wallets")
     public ResponseEntity<List<WalletBalanceDto>> getWallets() {
         return ResponseEntity.ok(bitfinexAccountRestClient.getWallets());

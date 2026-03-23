@@ -203,6 +203,7 @@ public class BitfinexFundingMarketRestClient {
             List<FundingRateBucketDto> bucketDtos = new ArrayList<>();
             BigDecimal cumulativeRatio = BigDecimal.ZERO;
             for (Map.Entry<BigDecimal, BucketAccumulator> entry : buckets.entrySet()) {
+                // 先依四捨五入後的利率分桶，再計算各 bucket 的占比與累積占比。
                 BigDecimal shareRatio = matchedTotalAmount.signum() == 0
                         ? BigDecimal.ZERO
                         : entry.getValue().totalAmount.divide(matchedTotalAmount, 8, RoundingMode.HALF_UP);

@@ -45,7 +45,7 @@ public class FundingAccountController {
         return ResponseEntity.ok(fundingAccountSummaryService.getSummary(symbol));
     }
 
-    @Operation(summary = "查詢目前 open funding offers")
+    @Operation(summary = "查詢目前未成交 funding offers")
     @GetMapping("/offers")
     public ResponseEntity<List<FundingPositionDto>> getOffers(
             @Parameter(description = "Funding symbol，例如 fUSD；不帶值時查全部 funding offers") @RequestParam(required = false) String symbol
@@ -54,7 +54,7 @@ public class FundingAccountController {
     }
 
     @Operation(
-            summary = "建立 funding offer",
+            summary = "建立 funding 掛單",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
                     content = @Content(
@@ -77,7 +77,7 @@ public class FundingAccountController {
     }
 
     @Operation(
-            summary = "取消 funding offer",
+            summary = "取消 funding 掛單",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
                     content = @Content(
