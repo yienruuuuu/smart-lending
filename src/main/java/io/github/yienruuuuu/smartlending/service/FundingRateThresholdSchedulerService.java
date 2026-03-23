@@ -10,6 +10,7 @@ import io.github.yienruuuuu.smartlending.model.FundingPositionDto;
 import io.github.yienruuuuu.smartlending.model.FundingRateBucketDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +30,7 @@ import org.springframework.stereotype.Service;
  *   <li>若可重新掛單金額為 0，視為都在放貸中，結束本次操作</li>
  *   <li>若目前已存在相同利率的掛單，則不重複操作</li>
  *   <li>若有未成交掛單，先全部取消，等待交易所同步後重新查詢狀態</li>
- *   <li>確認掛單已清空且可用餘額已回來後，再以新利率重掛一筆 120 天訂單</li>
+ *   <li>確認掛單已清空且可用餘額已回來後，依 150 USD 基本單位拆成多筆 120 天訂單掛出</li>
  * </ol>
  */
 @Service
@@ -41,13 +42,14 @@ public class FundingRateThresholdSchedulerService {
     private static final String TARGET_CURRENCY = "USD";
     private static final int TARGET_MIN_PERIOD = 60;
     private static final int TARGET_MAX_PERIOD = 120;
-    private static final int TARGET_LIMIT_ASKS = 10000;
+    private static final int TARGET_LIMIT_ASKS = 20000;
     private static final int TARGET_RATE_SCALE = 2;
     private static final BigDecimal TARGET_CUMULATIVE_SHARE_PERCENT = new BigDecimal("5.0");
     private static final BigDecimal MIN_ANNUAL_RATE_TO_ACT = new BigDecimal("10");
     private static final BigDecimal DAYS_PER_YEAR = new BigDecimal("365");
     private static final BigDecimal PERCENT_DIVISOR = new BigDecimal("100");
     private static final BigDecimal RATE_OFFSET = new BigDecimal("0.01");
+    private static final BigDecimal BASE_OFFER_CHUNK_AMOUNT = new BigDecimal("150");
     private static final int TARGET_OFFER_PERIOD = 120;
     private static final String TARGET_OFFER_TYPE = "LIMIT";
     private static final int TARGET_OFFER_FLAGS = 0;
@@ -138,16 +140,19 @@ public class FundingRateThresholdSchedulerService {
                 return;
             }
 
-            createOffer(refreshedIdleAmount, annualRate, targetDailyRate);
+            createOffers(refreshedIdleAmount, annualRate, targetDailyRate);
             return;
         }
 
-        createOffer(nullSafe(summary.idleAmount()), annualRate, targetDailyRate);
+        createOffers(nullSafe(summary.idleAmount()), annualRate, targetDailyRate);
     }
 
+    /**
+     * 以 debug 等級紀錄完整查詢結果，避免一般執行時輸出過長內容。
+     */
     private void logQueryResult(FundingLendbookRateDistributionDto result) {
         try {
-            log.info("排程 funding rate-distribution 查詢結果：{}", objectMapper.writeValueAsString(result));
+            log.debug("排程 funding rate-distribution 查詢結果：{}", objectMapper.writeValueAsString(result));
         } catch (Exception exception) {
             throw new IllegalStateException("無法序列化排程 funding rate-distribution 查詢結果", exception);
         }
@@ -228,32 +233,81 @@ public class FundingRateThresholdSchedulerService {
     }
 
     /**
-     * 依年化利率換算 Bitfinex 下單所需的日利率小數，並建立一筆 120 天 funding offer。
+     * 依年化利率換算 Bitfinex 下單所需的日利率小數，並依 150 USD 基本單位拆成多筆掛單。
      */
-    private void createOffer(BigDecimal amount, BigDecimal annualRate, BigDecimal dailyRate) {
+    private void createOffers(BigDecimal amount, BigDecimal annualRate, BigDecimal dailyRate) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             log.info("本次策略結束：可用掛單金額小於等於 0，不建立新掛單。amount={}", amount);
             return;
         }
 
-        CreateFundingOfferRequest request = new CreateFundingOfferRequest(
+        List<BigDecimal> chunkAmounts = splitOfferAmounts(amount);
+        log.info("準備建立 funding 掛單。symbol={}, totalAmount={}, chunkCount={}, chunks={}, annualRate={}, dailyRate={}, period={}, type={}, flags={}",
                 TARGET_SYMBOL,
                 amount.stripTrailingZeros().toPlainString(),
+                chunkAmounts.size(),
+                formatAmounts(chunkAmounts),
+                annualRate,
                 dailyRate.stripTrailingZeros().toPlainString(),
                 TARGET_OFFER_PERIOD,
                 TARGET_OFFER_TYPE,
-                TARGET_OFFER_FLAGS
-        );
+                TARGET_OFFER_FLAGS);
 
-        fundingAccountRestClient.createFundingOffer(request);
-        log.info("已建立新的 funding 掛單。symbol={}, amount={}, annualRate={}, dailyRate={}, period={}, type={}, flags={}",
-                request.symbol(),
-                request.amount(),
-                annualRate,
-                request.rate(),
-                request.period(),
-                request.type(),
-                request.flags());
+        for (BigDecimal chunkAmount : chunkAmounts) {
+            CreateFundingOfferRequest request = new CreateFundingOfferRequest(
+                    TARGET_SYMBOL,
+                    chunkAmount.stripTrailingZeros().toPlainString(),
+                    dailyRate.stripTrailingZeros().toPlainString(),
+                    TARGET_OFFER_PERIOD,
+                    TARGET_OFFER_TYPE,
+                    TARGET_OFFER_FLAGS
+            );
+
+            fundingAccountRestClient.createFundingOffer(request);
+            log.info("已建立新的 funding 掛單。symbol={}, amount={}, annualRate={}, dailyRate={}, period={}, type={}, flags={}",
+                    request.symbol(),
+                    request.amount(),
+                    annualRate,
+                    request.rate(),
+                    request.period(),
+                    request.type(),
+                    request.flags());
+        }
+    }
+
+    /**
+     * 依 150 USD 為基本單位拆單；若有餘數，會併入最後一筆，避免產生過小尾單。
+     */
+    private List<BigDecimal> splitOfferAmounts(BigDecimal totalAmount) {
+        BigDecimal normalizedAmount = totalAmount.stripTrailingZeros();
+        if (normalizedAmount.compareTo(BASE_OFFER_CHUNK_AMOUNT) <= 0) {
+            return List.of(normalizedAmount);
+        }
+
+        BigDecimal[] division = normalizedAmount.divideAndRemainder(BASE_OFFER_CHUNK_AMOUNT);
+        int baseChunkCount = division[0].intValueExact();
+        BigDecimal remainder = division[1];
+        List<BigDecimal> amounts = new ArrayList<>(baseChunkCount);
+
+        for (int index = 0; index < baseChunkCount; index++) {
+            BigDecimal chunkAmount = BASE_OFFER_CHUNK_AMOUNT;
+            if (index == baseChunkCount - 1 && remainder.compareTo(BigDecimal.ZERO) > 0) {
+                chunkAmount = chunkAmount.add(remainder);
+            }
+            amounts.add(chunkAmount.stripTrailingZeros());
+        }
+
+        return amounts;
+    }
+
+    /**
+     * 將拆單結果轉成適合 log 顯示的字串。
+     */
+    private String formatAmounts(List<BigDecimal> amounts) {
+        return amounts.stream()
+                .map(value -> value.stripTrailingZeros().toPlainString())
+                .toList()
+                .toString();
     }
 
     /**
@@ -265,6 +319,9 @@ public class FundingRateThresholdSchedulerService {
                 .divide(PERCENT_DIVISOR, 8, RoundingMode.HALF_UP);
     }
 
+    /**
+     * 將可能為 null 的金額轉成 0，避免後續金額計算發生空值問題。
+     */
     private BigDecimal nullSafe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }

@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -100,7 +101,7 @@ class FundingRateThresholdSchedulerServiceTest {
     }
 
     @Test
-    void shouldCancelExistingOffersAndCreateNewOneAfterRefresh() {
+    void shouldCancelExistingOffersAndCreateChunkedOffersAfterRefresh() {
         when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
                 .thenReturn(distribution(
                         bucket("11.31", "4.90"),
@@ -108,19 +109,51 @@ class FundingRateThresholdSchedulerServiceTest {
                 ));
         when(fundingAccountSummaryService.getSummary("fUSD"))
                 .thenReturn(summary(new BigDecimal("300"), new BigDecimal("700"), List.of(openOffer(12345L, "0.00020000"))))
-                .thenReturn(summary(new BigDecimal("1000"), BigDecimal.ZERO, List.of()));
+                .thenReturn(summary(new BigDecimal("480"), BigDecimal.ZERO, List.of()));
 
         service.pollTargetFundingRate();
 
         verify(fundingAccountRestClient).cancelFundingOffer(argThat(request -> request.offerId().equals(12345L)));
-        verify(fundingAccountRestClient).createFundingOffer(argThat(request ->
+        verify(fundingAccountRestClient, times(2)).createFundingOffer(argThat(request ->
                 "fUSD".equals(request.symbol())
-                        && "1000".equals(request.amount())
+                        && "150".equals(request.amount())
                         && "0.00030986".equals(request.rate())
                         && request.period().equals(120)
                         && "LIMIT".equals(request.type())
                         && request.flags().equals(0)
         ));
+        verify(fundingAccountRestClient, times(1)).createFundingOffer(argThat(request ->
+                "fUSD".equals(request.symbol())
+                        && "180".equals(request.amount())
+                        && "0.00030986".equals(request.rate())
+                        && request.period().equals(120)
+                        && "LIMIT".equals(request.type())
+                        && request.flags().equals(0)
+        ));
+        verify(fundingAccountRestClient, times(3)).createFundingOffer(any());
+    }
+
+    @Test
+    void shouldCreateSingleMergedOfferWhenAmountIsBelowTwoBaseChunks() {
+        when(fundingMarketRestClient.getFundingLendbookRateDistribution(any(), any(), any(), any(), any()))
+                .thenReturn(distribution(
+                        bucket("11.31", "4.90"),
+                        bucket("11.32", "5.10")
+                ));
+        when(fundingAccountSummaryService.getSummary("fUSD"))
+                .thenReturn(summary(new BigDecimal("299"), BigDecimal.ZERO, List.of()));
+
+        service.pollTargetFundingRate();
+
+        verify(fundingAccountRestClient, times(1)).createFundingOffer(argThat(request ->
+                "fUSD".equals(request.symbol())
+                        && "299".equals(request.amount())
+                        && "0.00030986".equals(request.rate())
+                        && request.period().equals(120)
+                        && "LIMIT".equals(request.type())
+                        && request.flags().equals(0)
+        ));
+        verify(fundingAccountRestClient, times(1)).createFundingOffer(any());
     }
 
     private BitfinexProperties properties() {
