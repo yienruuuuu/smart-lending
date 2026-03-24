@@ -17,6 +17,7 @@ ENV JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPe
 
 COPY --from=builder /workspace/build/libs/*.jar app.jar
 
-EXPOSE 8080
+EXPOSE 8085
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_TOOL_OPTIONS -jar /app/app.jar"]
+

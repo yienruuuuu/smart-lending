@@ -74,15 +74,15 @@ docker compose down
 
 ```bash
 docker build -t smart-lending .
-docker run -d --name smart-lending --env-file .env -e JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8" -p 8080:8080 --restart unless-stopped smart-lending
+docker run -d --name smart-lending --env-file .env -e JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8" -p 8085:8085 --restart unless-stopped smart-lending
 ```
 
 ## Swagger 與 REST API
 
 啟動後可開：
 
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- Swagger UI: `http://localhost:8085/swagger-ui.html`
+- OpenAPI JSON: `http://localhost:8085/v3/api-docs`
 
 市場查詢 API：
 
@@ -236,6 +236,7 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 5. 補上 resilience 設計，包括 rate limit 保護、metrics、告警、request tracing 與 dead-letter 記錄。
 6. 建立測試分層，至少補齊簽章測試、controller 測試與 sandbox 整合測試。
 7. 未來若要上線，建議加入 secrets 管理、簽章封裝、操作審批、速率限制與關鍵指令雙重保護。
+
 
 
 
