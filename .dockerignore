@@ -1,0 +1,10 @@
+.git
+.codex
+.gradle
+.idea
+build
+logs
+*.iml
+*.log
+.env
+tmp_apply_patch.txt

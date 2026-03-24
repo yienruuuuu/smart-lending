@@ -1,0 +1,12 @@
+services:
+  smart-lending:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

@@ -56,6 +56,27 @@ Windows PowerShell：
 .\gradlew.bat bootRun
 ```
 
+## Docker 執行
+
+先確認根目錄 `.env` 已填好需要的環境變數。`compose.yaml` 會透過 `env_file: .env` 把這些值注入 container，因此不需要把 `.env` 打包進 image。runtime image 採用較小的 JRE Alpine 版本，並預設套用偏保守的 `JAVA_TOOL_OPTIONS`，讓服務在 Docker 內以較低記憶體占用運行。
+
+```bash
+docker compose up -d --build
+```
+
+停止：
+
+```bash
+docker compose down
+```
+
+如果只想用 `docker run`，也可以先 build image 再帶入 `.env`：
+
+```bash
+docker build -t smart-lending .
+docker run -d --name smart-lending --env-file .env -e JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8" -p 8080:8080 --restart unless-stopped smart-lending
+```
+
 ## Swagger 與 REST API
 
 啟動後可開：
@@ -215,5 +236,7 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 5. 補上 resilience 設計，包括 rate limit 保護、metrics、告警、request tracing 與 dead-letter 記錄。
 6. 建立測試分層，至少補齊簽章測試、controller 測試與 sandbox 整合測試。
 7. 未來若要上線，建議加入 secrets 管理、簽章封裝、操作審批、速率限制與關鍵指令雙重保護。
+
+
 
 
