@@ -13,6 +13,7 @@
 - 提供 RESTful API 查詢 lendbook ask 匯總、FRR ask 金額與 FRR 佔比
 - 提供 RESTful API 依期間區間與利率小數位分桶統計 lendbook ask 總額
 - 每 10 分鐘自動查詢一次特定 funding rate distribution，並記錄門檻利率
+- 每 10 分鐘檢查一次 sub account funding wallet，閒置資金大於 150 USD 時以固定條件掛單
 - 提供 Swagger UI 方便直接測試 API
 
 ## 本機設定
@@ -22,9 +23,13 @@
 ```dotenv
 BITFINEX_API_KEY=
 BITFINEX_API_SECRET=
+SUB_BITFINEX_API_KEY=
+SUB_BITFINEX_API_SECRET=
 ```
 
-目前市場查詢 API 不會使用 `BITFINEX_API_KEY` 與 `BITFINEX_API_SECRET`，但帳戶查詢與 funding offer 操作 API 會使用這兩個欄位，且 key 需要有對應權限。
+目前市場查詢 API 不會使用 `BITFINEX_API_KEY` 與 `BITFINEX_API_SECRET`，但主帳戶的帳戶查詢與 funding offer 操作 API 會使用這兩個欄位，且 key 需要有對應權限。
+
+若要啟用 sub account 固定策略，請另外提供 `SUB_BITFINEX_API_KEY` 與 `SUB_BITFINEX_API_SECRET`。未提供時，sub account 排程會自動略過。
 
 ## 可調整參數
 
@@ -135,6 +140,15 @@ GET /api/v1/funding/market/lendbook/rate-distribution?currency=USD&minPeriod=2&m
 
 如果第一筆 bucket 就已經大於 `5.0`，則會記錄目前第一筆已超過門檻，沒有前一筆可取。
 
+另外，系統也會每 10 分鐘檢查一次 sub account 的 funding wallet：
+
+- 需要先設定 `SUB_BITFINEX_API_KEY` 與 `SUB_BITFINEX_API_SECRET`
+- 只檢查 `funding/USD` wallet 的 `availableBalance`
+- `availableBalance > 150` 時，會以目前全部閒置金額建立一筆 `fUSD` funding offer
+- 固定日利率 `0.0435`
+- 固定 `120` 天
+- `availableBalance <= 150` 時不動作
+
 注意：這些市場 API 反映的是目前查回的 lendbook ask snapshot，不是已成交借出的總額。
 
 帳戶查詢與操作 API：
@@ -201,3 +215,5 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 5. 補上 resilience 設計，包括 rate limit 保護、metrics、告警、request tracing 與 dead-letter 記錄。
 6. 建立測試分層，至少補齊簽章測試、controller 測試與 sandbox 整合測試。
 7. 未來若要上線，建議加入 secrets 管理、簽章封裝、操作審批、速率限制與關鍵指令雙重保護。
+
+
