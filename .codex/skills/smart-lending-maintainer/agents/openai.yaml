@@ -1,0 +1,4 @@
+interface:
+  display_name: "Smart Lending Maintainer"
+  short_description: "Maintain the Spring Boot Bitfinex lending service safely."
+  default_prompt: "Use this skill when changing Smart Lending controllers, Bitfinex clients, schedulers, configuration, or tests so changes stay consistent with the repo's trading-risk constraints and validation flow."
