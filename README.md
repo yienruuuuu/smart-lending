@@ -74,7 +74,7 @@ docker compose down
 
 ```bash
 docker build -t smart-lending .
-docker run -d --name smart-lending --env-file .env -e JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8" -p 8085:8085 --restart unless-stopped smart-lending
+docker run -d --name smart-lending --env-file .env -e SERVER_PORT=8085 -e JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8" -p 8085:8085 --restart unless-stopped smart-lending
 ```
 
 ## Swagger 與 REST API

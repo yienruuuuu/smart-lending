@@ -13,6 +13,7 @@ RUN chmod +x gradlew && ./gradlew bootJar --no-daemon
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
+ENV SERVER_PORT=8085
 ENV JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8"
 
 COPY --from=builder /workspace/build/libs/*.jar app.jar
