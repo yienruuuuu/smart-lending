@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Lending 績效儀表板</title>
+    <link rel="stylesheet" href="/performance.css">
+</head>
+<body>
+<main class="page">
+    <section class="hero">
+        <p class="eyebrow">Smart Lending</p>
+        <h1>放貸績效儀表板</h1>
+        <p class="subtitle">用 repo 內保存的快照追蹤主帳戶、sub account 與合併後的 fUSD 績效表現。</p>
+    </section>
+
+    <section class="toolbar">
+        <div class="segmented" id="account-tabs">
+            <button data-account="combined" class="active">合併</button>
+            <button data-account="main">主帳戶</button>
+            <button data-account="sub">子帳戶</button>
+        </div>
+        <label class="range-picker">
+            <span>區間</span>
+            <select id="range-select">
+                <option value="7d">7D</option>
+                <option value="30d" selected>30D</option>
+                <option value="90d">90D</option>
+                <option value="all">All</option>
+            </select>
+        </label>
+    </section>
+
+    <section class="summary-grid">
+        <article class="card">
+            <h2>合併</h2>
+            <p class="metric" id="combined-annualized">--</p>
+            <p class="detail" id="combined-wallet">資產 --</p>
+        </article>
+        <article class="card">
+            <h2>主帳戶</h2>
+            <p class="metric" id="main-annualized">--</p>
+            <p class="detail" id="main-wallet">資產 --</p>
+        </article>
+        <article class="card">
+            <h2>子帳戶</h2>
+            <p class="metric" id="sub-annualized">--</p>
+            <p class="detail" id="sub-wallet">資產 --</p>
+        </article>
+    </section>
+
+    <section class="chart-panel">
+        <div class="chart-header">
+            <div>
+                <p class="eyebrow">趨勢</p>
+                <h2 id="chart-title">合併績效</h2>
+            </div>
+            <div class="chart-stats">
+                <span id="range-return">報酬 --</span>
+                <span id="range-count">點數 --</span>
+            </div>
+        </div>
+        <svg id="chart" viewBox="0 0 800 260" preserveAspectRatio="none" aria-label="績效折線圖"></svg>
+        <div class="axis-labels">
+            <span id="axis-start">--</span>
+            <span id="axis-end">--</span>
+        </div>
+    </section>
+</main>
+<script src="/performance.js"></script>
+</body>
+</html>

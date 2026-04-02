@@ -26,3 +26,9 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+performance:
+  snapshot-enabled: ${PERFORMANCE_SNAPSHOT_ENABLED:true}
+  dashboard-enabled: ${PERFORMANCE_DASHBOARD_ENABLED:true}
+  storage-path: ${PERFORMANCE_STORAGE_PATH:data/performance}
+  snapshot-fixed-delay-millis: ${PERFORMANCE_SNAPSHOT_FIXED_DELAY_MILLIS:600000}
+

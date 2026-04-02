@@ -53,7 +53,7 @@ class SubFundingOfferSchedulerServiceTest {
         verify(subBitfinexFundingAccountRestClient).createFundingOffer(argThat(request ->
                 "fUSD".equals(request.symbol())
                         && "180".equals(request.amount())
-                        && "0.0435".equals(request.rate())
+                        && "0.000435".equals(request.rate())
                         && request.period().equals(120)
                         && "LIMIT".equals(request.type())
                         && request.flags().equals(0)

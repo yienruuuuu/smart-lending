@@ -83,6 +83,7 @@ docker run -d --name smart-lending --env-file .env -e SERVER_PORT=8085 -e JAVA_T
 
 - Swagger UI: `http://localhost:8085/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8085/v3/api-docs`
+- Performance Dashboard: `http://localhost:8085/performance.html`
 
 市場查詢 API：
 
@@ -215,6 +216,43 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 ```
 
 `/api/v1/account/funding/summary` 會額外整合 funding wallet、offers、credits、loans，直接回傳總錢包金額、已成交金額、閒置金額與掛單資料。其餘 funding API 仍完整保留 `raw`，並附上 `decoded` 方便在 Swagger 直接閱讀。
+
+## Performance 快照與可視化
+
+系統現在支援把主帳戶與 sub account 的 `fUSD` funding 狀態定時寫成 JSONL 快照，預設資料目錄為 `data/performance/`：
+
+- `main-fusd-snapshots.jsonl`
+- `sub-fusd-snapshots.jsonl`
+
+每筆快照會保存：
+
+- `capturedAt`
+- `totalWalletAmount`
+- `idleAmount`
+- `offerAmount`
+- `creditAmount`
+- `loanAmount`
+- `lentAmount`
+- `unsettledInterest`
+
+第一版年化報酬率是依快照資產曲線倒推的近似實際年化，不是含現金流事件的 XIRR；如果未來有明確入金、出金或主副帳互轉，建議再補事件式 ledger。
+
+可透過 `.env` 或系統環境變數調整：
+
+```dotenv
+PERFORMANCE_SNAPSHOT_ENABLED=true
+PERFORMANCE_DASHBOARD_ENABLED=true
+PERFORMANCE_STORAGE_PATH=data/performance
+PERFORMANCE_SNAPSHOT_FIXED_DELAY_MILLIS=600000
+```
+
+報表 API：
+
+```http
+GET /api/v1/performance/summary?account=combined&range=30d
+GET /api/v1/performance/series?account=main&range=7d
+GET /api/v1/performance/snapshots/latest
+```
 
 ## 專案結構
 

@@ -112,4 +112,11 @@ public class BitfinexProperties {
                 && subApiSecret != null
                 && !subApiSecret.isBlank();
     }
+
+    public boolean hasMainAccountCredentials() {
+        return apiKey != null
+                && !apiKey.isBlank()
+                && apiSecret != null
+                && !apiSecret.isBlank();
+    }
 }
