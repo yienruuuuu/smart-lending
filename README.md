@@ -244,6 +244,10 @@ PERFORMANCE_SNAPSHOT_ENABLED=true
 PERFORMANCE_DASHBOARD_ENABLED=true
 PERFORMANCE_STORAGE_PATH=data/performance
 PERFORMANCE_SNAPSHOT_FIXED_DELAY_MILLIS=600000
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+TELEGRAM_POLL_FIXED_DELAY_MILLIS=600000
 ```
 
 報表 API：
@@ -253,6 +257,16 @@ GET /api/v1/performance/summary?account=combined&range=30d
 GET /api/v1/performance/series?account=main&range=7d
 GET /api/v1/performance/snapshots/latest
 ```
+
+## Telegram 狀態切換通知
+
+若有設定 `TELEGRAM_BOT_TOKEN` 與 `TELEGRAM_CHAT_ID`，系統會定時比對主帳戶與 sub account 的 funding 狀態，只有在以下切換時才推送通知：
+
+- 掛單中 -> 放貸中：有人借款了
+- 放貸中 -> 掛單中：有人還款了
+- 放貸中 -> 放貸中，但 open offer 利率切換：根據訂單簿重新掛單
+
+第一次只建立 baseline，不會通知。baseline 檔案預設存放於 `data/notifications/funding-state.json`。
 
 ## 專案結構
 

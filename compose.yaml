@@ -8,7 +8,10 @@ services:
     environment:
       SERVER_PORT: 8085
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -XX:MinRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8}
+      PERFORMANCE_STORAGE_PATH: /app/data/performance
     ports:
       - "8085:8085"
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped
 

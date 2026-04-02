@@ -32,3 +32,9 @@ performance:
   storage-path: ${PERFORMANCE_STORAGE_PATH:data/performance}
   snapshot-fixed-delay-millis: ${PERFORMANCE_SNAPSHOT_FIXED_DELAY_MILLIS:600000}
 
+telegram:
+  enabled: ${TELEGRAM_ENABLED:true}
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  chat-id: ${TELEGRAM_CHAT_ID:}
+  poll-fixed-delay-millis: ${TELEGRAM_POLL_FIXED_DELAY_MILLIS:600000}
+
