@@ -3,11 +3,15 @@ package io.github.yienruuuuu.smartlending.controller;
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowEvent;
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowType;
 import io.github.yienruuuuu.smartlending.model.PerformanceLatestSnapshotsDto;
+import io.github.yienruuuuu.smartlending.model.PerformanceLogRowDto;
+import io.github.yienruuuuu.smartlending.model.PerformanceLogsResponseDto;
+import io.github.yienruuuuu.smartlending.model.PerformanceLogsSummaryDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSeriesPointDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSeriesResponseDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSnapshot;
 import io.github.yienruuuuu.smartlending.model.PerformanceSummaryDto;
 import io.github.yienruuuuu.smartlending.service.PerformanceCashflowService;
+import io.github.yienruuuuu.smartlending.service.PerformanceLogsService;
 import io.github.yienruuuuu.smartlending.service.PerformanceMetricsService;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,6 +39,9 @@ class PerformanceControllerTest {
 
     @MockBean
     private PerformanceCashflowService performanceCashflowService;
+
+    @MockBean
+    private PerformanceLogsService performanceLogsService;
 
     @Test
     void shouldReturnPerformanceSummary() throws Exception {
@@ -143,5 +150,58 @@ class PerformanceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("INTERNAL_TRANSFER_OUT"))
                 .andExpect(jsonPath("$[0].amount").value(-300));
+    }
+
+    @Test
+    void shouldReturnPerformanceLogs() throws Exception {
+        when(performanceLogsService.getLogs("combined", "30d", "all", null, 0, 50)).thenReturn(
+                new PerformanceLogsResponseDto(
+                        "combined",
+                        "30d",
+                        "all",
+                        null,
+                        0,
+                        50,
+                        2,
+                        new PerformanceLogsSummaryDto(
+                                2,
+                                1,
+                                1,
+                                new BigDecimal("100"),
+                                new BigDecimal("1000"),
+                                new BigDecimal("1100"),
+                                Instant.parse("2026-03-01T00:00:00Z"),
+                                Instant.parse("2026-03-31T00:00:00Z")
+                        ),
+                        List.of(
+                                new PerformanceLogRowDto(
+                                        "snapshot",
+                                        "combined",
+                                        Instant.parse("2026-03-31T00:00:00Z"),
+                                        "資產快照",
+                                        "snapshot",
+                                        null,
+                                        new BigDecimal("1100"),
+                                        new BigDecimal("250"),
+                                        new BigDecimal("450"),
+                                        new BigDecimal("0.4"),
+                                        "snapshot:combined:1",
+                                        "aggregated",
+                                        "snapshot",
+                                        "wallet=USD"
+                                )
+                        )
+                )
+        );
+
+        mockMvc.perform(get("/api/v1/performance/logs")
+                        .param("account", "combined")
+                        .param("range", "30d")
+                        .param("type", "all")
+                        .param("page", "0")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.eventCount").value(2))
+                .andExpect(jsonPath("$.items[0].kind").value("snapshot"));
     }
 }

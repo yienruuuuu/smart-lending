@@ -69,6 +69,19 @@ body {
     margin-bottom: 18px;
 }
 
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.logs-link {
+    color: #16202a;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+}
+
 .segmented {
     display: flex;
     flex-wrap: wrap;
@@ -213,6 +226,11 @@ body {
     .chart-header {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .toolbar-actions {
+        width: 100%;
+        justify-content: space-between;
     }
 
     .chart-stats {

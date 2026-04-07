@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Lending 日誌檢視</title>
+    <link rel="stylesheet" href="/logs.css">
+</head>
+<body>
+<main class="page">
+    <section class="hero">
+        <p class="eyebrow">Smart Lending</p>
+        <div class="hero-row">
+            <div>
+                <h1>績效日誌檢視</h1>
+                <p class="subtitle">把 snapshot 與 cashflow 合併成事件流，支援篩選、搜尋與時間序列檢視。</p>
+            </div>
+            <a class="back-link" href="/performance.html">回到總覽</a>
+        </div>
+    </section>
+
+    <section class="toolbar">
+        <div class="filters">
+            <label>
+                <span>帳號</span>
+                <select id="account-select">
+                    <option value="combined" selected>合併</option>
+                    <option value="main">主帳戶</option>
+                    <option value="sub">子帳戶</option>
+                </select>
+            </label>
+            <label>
+                <span>區間</span>
+                <select id="range-select">
+                    <option value="7d">7D</option>
+                    <option value="30d" selected>30D</option>
+                    <option value="90d">90D</option>
+                    <option value="all">All</option>
+                </select>
+            </label>
+            <label>
+                <span>類型</span>
+                <select id="type-select">
+                    <option value="all" selected>全部</option>
+                    <option value="snapshot">Snapshot</option>
+                    <option value="deposit">Deposit</option>
+                    <option value="withdrawal">Withdrawal</option>
+                    <option value="internal_transfer_in">Transfer In</option>
+                    <option value="internal_transfer_out">Transfer Out</option>
+                </select>
+            </label>
+            <label class="search-field">
+                <span>搜尋</span>
+                <input id="query-input" type="search" placeholder="source / note / referenceId">
+            </label>
+        </div>
+    </section>
+
+    <section class="summary-grid">
+        <article class="card"><p class="label">事件總數</p><p class="value" id="summary-events">--</p></article>
+        <article class="card"><p class="label">Snapshot</p><p class="value" id="summary-snapshots">--</p></article>
+        <article class="card"><p class="label">Cashflow</p><p class="value" id="summary-cashflows">--</p></article>
+        <article class="card"><p class="label">淨現金流</p><p class="value" id="summary-net-cashflow">--</p></article>
+    </section>
+
+    <section class="chart-panel">
+        <div class="chart-header">
+            <div>
+                <p class="eyebrow">Timeline</p>
+                <h2>事件趨勢</h2>
+            </div>
+            <div class="chart-meta">
+                <span id="summary-start-value">起始資產 --</span>
+                <span id="summary-end-value">結束資產 --</span>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <svg id="logs-chart" viewBox="0 0 960 320" preserveAspectRatio="none"></svg>
+            <div id="logs-chart-tooltip" class="chart-tooltip" hidden></div>
+        </div>
+    </section>
+
+    <section class="table-panel">
+        <div class="table-header">
+            <p class="eyebrow">Events</p>
+            <div class="pager">
+                <button id="prev-page" type="button">上一頁</button>
+                <span id="page-label">--</span>
+                <button id="next-page" type="button">下一頁</button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>時間</th>
+                    <th>帳號</th>
+                    <th>類型</th>
+                    <th>摘要</th>
+                    <th>金額</th>
+                    <th>資產</th>
+                    <th>利用率</th>
+                    <th>來源</th>
+                    <th>Reference</th>
+                </tr>
+                </thead>
+                <tbody id="logs-body">
+                <tr><td colspan="9">載入中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+<script src="/logs.js"></script>
+</body>
+</html>

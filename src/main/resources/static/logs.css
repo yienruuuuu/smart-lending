@@ -1,0 +1,255 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+            radial-gradient(circle at top left, rgba(243, 180, 77, 0.18), transparent 28%),
+            radial-gradient(circle at bottom right, rgba(50, 115, 220, 0.16), transparent 34%),
+            linear-gradient(135deg, #f5f2ea 0%, #eef3f7 100%);
+    color: #16202a;
+    font-family: Georgia, "Times New Roman", serif;
+}
+
+.page {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 32px 20px 48px;
+}
+
+.hero, .toolbar, .summary-grid, .chart-panel, .table-panel {
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(22, 32, 42, 0.08);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 14px 40px rgba(22, 32, 42, 0.08);
+    border-radius: 22px;
+}
+
+.hero {
+    padding: 22px;
+    margin-bottom: 18px;
+}
+
+.hero-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: start;
+}
+
+.eyebrow {
+    margin: 0 0 8px;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8a5b17;
+}
+
+h1, h2 {
+    margin: 0;
+}
+
+.subtitle {
+    margin: 12px 0 0;
+    color: #4d5965;
+}
+
+.back-link {
+    color: #16202a;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.toolbar {
+    padding: 18px;
+    margin-bottom: 18px;
+}
+
+.filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: #4d5965;
+    font-size: 13px;
+}
+
+.filters select, .filters input {
+    border: 0;
+    border-radius: 14px;
+    background: #eef2f6;
+    color: #1c2731;
+    padding: 12px 14px;
+    font: inherit;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    padding: 14px;
+    margin-bottom: 18px;
+}
+
+.card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(240, 244, 247, 0.84));
+    border-radius: 18px;
+    padding: 18px;
+}
+
+.label {
+    margin: 0;
+    color: #6c7782;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.value {
+    margin: 12px 0 0;
+    font-size: 30px;
+}
+
+.chart-panel, .table-panel {
+    padding: 20px;
+    margin-bottom: 18px;
+}
+
+.chart-header, .table-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 16px;
+}
+
+.chart-meta, .pager {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    color: #4d5965;
+}
+
+.chart-wrap {
+    position: relative;
+}
+
+#logs-chart {
+    width: 100%;
+    height: 320px;
+    display: block;
+}
+
+#logs-chart .chart-grid {
+    stroke: rgba(22, 32, 42, 0.08);
+    stroke-width: 1;
+}
+
+#logs-chart .chart-baseline {
+    stroke: rgba(22, 32, 42, 0.16);
+    stroke-width: 1.2;
+}
+
+#logs-chart .chart-axis-text {
+    fill: #6c7782;
+    font-size: 11px;
+}
+
+#logs-chart .snapshot-dot {
+    fill: #16202a;
+}
+
+#logs-chart .cashflow-bar.positive {
+    fill: rgba(61, 126, 88, 0.55);
+}
+
+#logs-chart .cashflow-bar.negative {
+    fill: rgba(176, 77, 77, 0.55);
+}
+
+.chart-tooltip {
+    position: absolute;
+    min-width: 170px;
+    max-width: 260px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(22, 32, 42, 0.92);
+    color: #f7f3eb;
+    font-size: 12px;
+    line-height: 1.5;
+    pointer-events: none;
+    box-shadow: 0 10px 26px rgba(22, 32, 42, 0.22);
+    transform: translate(-50%, calc(-100% - 12px));
+    z-index: 2;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 12px 10px;
+    border-top: 1px solid rgba(22, 32, 42, 0.08);
+    text-align: left;
+    vertical-align: top;
+    font-size: 14px;
+}
+
+th {
+    color: #6c7782;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.amount-positive {
+    color: #2f6d4a;
+}
+
+.amount-negative {
+    color: #a24747;
+}
+
+.pager button {
+    border: 0;
+    border-radius: 999px;
+    background: #16202a;
+    color: #f8f3e8;
+    padding: 10px 14px;
+    cursor: pointer;
+    font: inherit;
+}
+
+.pager button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+@media (max-width: 980px) {
+    .filters, .summary-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .hero-row, .chart-header, .table-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .filters, .summary-grid {
+        grid-template-columns: 1fr;
+    }
+}

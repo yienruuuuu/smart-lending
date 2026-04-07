@@ -84,6 +84,7 @@ docker run -d --name smart-lending --env-file .env -e SERVER_PORT=8085 -e JAVA_T
 - Swagger UI: `http://localhost:8085/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8085/v3/api-docs`
 - Performance Dashboard: `http://localhost:8085/performance.html`
+- Performance Logs: `http://localhost:8085/logs.html`
 
 市場查詢 API：
 
@@ -281,6 +282,7 @@ GET /api/v1/performance/summary?account=combined&range=30d
 GET /api/v1/performance/series?account=main&range=7d
 GET /api/v1/performance/snapshots/latest
 GET /api/v1/performance/cashflows?account=main&range=30d
+GET /api/v1/performance/logs?account=combined&range=30d&type=all&page=0&size=50
 ```
 
 ## Telegram 狀態切換通知
