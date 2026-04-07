@@ -21,6 +21,9 @@ public class PerformanceProperties {
     @Min(1000)
     private long snapshotFixedDelayMillis = 600000L;
 
+    @Min(1000)
+    private long cashflowSyncFixedDelayMillis = 600000L;
+
     public boolean isSnapshotEnabled() {
         return snapshotEnabled;
     }
@@ -51,5 +54,13 @@ public class PerformanceProperties {
 
     public void setSnapshotFixedDelayMillis(long snapshotFixedDelayMillis) {
         this.snapshotFixedDelayMillis = snapshotFixedDelayMillis;
+    }
+
+    public long getCashflowSyncFixedDelayMillis() {
+        return cashflowSyncFixedDelayMillis;
+    }
+
+    public void setCashflowSyncFixedDelayMillis(long cashflowSyncFixedDelayMillis) {
+        this.cashflowSyncFixedDelayMillis = cashflowSyncFixedDelayMillis;
     }
 }

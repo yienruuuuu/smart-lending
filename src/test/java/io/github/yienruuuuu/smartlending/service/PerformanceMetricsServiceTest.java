@@ -2,6 +2,8 @@ package io.github.yienruuuuu.smartlending.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.yienruuuuu.smartlending.config.PerformanceProperties;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowEvent;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowType;
 import io.github.yienruuuuu.smartlending.model.PerformanceSnapshot;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,27 +18,60 @@ class PerformanceMetricsServiceTest {
     java.nio.file.Path tempDir;
 
     @Test
-    void shouldCalculateAnnualizedSummaryForSingleAccount() {
+    void shouldCalculateTwrAndXirrForSingleAccountWithoutCashflows() {
         PerformanceMetricsService service = service();
-        repository().append(snapshot("main", "2026-03-01T00:00:00Z", "1000", "300", "100", "300", "280"));
-        repository().append(snapshot("main", "2026-03-31T00:00:00Z", "1100", "250", "150", "450", "300"));
+        snapshotRepository().append(snapshot("main", "2026-03-01T00:00:00Z", "1000", "300", "100", "300", "280"));
+        snapshotRepository().append(snapshot("main", "2026-03-31T00:00:00Z", "1100", "250", "150", "450", "300"));
 
         var summary = service.getSummary("main", "30d");
 
         assertThat(summary.snapshotCount()).isEqualTo(2);
-        assertThat(summary.startValue()).isEqualByComparingTo("1000");
-        assertThat(summary.endValue()).isEqualByComparingTo("1100");
+        assertThat(summary.cashflowCount()).isZero();
         assertThat(summary.totalReturnPercent()).isEqualByComparingTo("10.00");
-        assertThat(summary.annualizedReturnPercent()).isGreaterThan(new BigDecimal("200.00"));
+        assertThat(summary.twrReturnPercent()).isEqualByComparingTo("10.00");
+        assertThat(summary.xirrPercent()).isGreaterThan(new BigDecimal("200.00"));
+    }
+
+    @Test
+    void shouldExcludeInternalTransfersFromCombinedTwr() {
+        PerformanceMetricsService service = service();
+        snapshotRepository().append(snapshot("main", "2026-03-01T00:00:00Z", "1000", "300", "100", "300", "280"));
+        snapshotRepository().append(snapshot("main", "2026-03-31T00:00:00Z", "700", "300", "100", "300", "280"));
+        snapshotRepository().append(snapshot("sub", "2026-03-01T00:00:00Z", "500", "140", "60", "140", "120"));
+        snapshotRepository().append(snapshot("sub", "2026-03-31T00:00:00Z", "800", "140", "60", "140", "120"));
+        cashflowRepository().merge("main", java.util.List.of(cashflow("main", "2026-03-15T00:00:00Z", "-300", PerformanceCashflowType.INTERNAL_TRANSFER_OUT)));
+        cashflowRepository().merge("sub", java.util.List.of(cashflow("sub", "2026-03-15T00:00:00Z", "300", PerformanceCashflowType.INTERNAL_TRANSFER_IN)));
+
+        var summary = service.getSummary("combined", "30d");
+
+        assertThat(summary.startValue()).isEqualByComparingTo("1500");
+        assertThat(summary.endValue()).isEqualByComparingTo("1500");
+        assertThat(summary.twrReturnPercent()).isEqualByComparingTo("0.00");
+        assertThat(summary.xirrPercent()).isNull();
+    }
+
+    @Test
+    void shouldAdjustMainTwrForTransferAndStillProvideXirr() {
+        PerformanceMetricsService service = service();
+        snapshotRepository().append(snapshot("main", "2026-03-01T00:00:00Z", "1000", "300", "100", "300", "280"));
+        snapshotRepository().append(snapshot("main", "2026-03-31T00:00:00Z", "800", "250", "150", "450", "300"));
+        cashflowRepository().merge("main", java.util.List.of(cashflow("main", "2026-03-15T00:00:00Z", "-300", PerformanceCashflowType.INTERNAL_TRANSFER_OUT)));
+
+        var summary = service.getSummary("main", "30d");
+
+        assertThat(summary.totalReturnPercent()).isEqualByComparingTo("-20.00");
+        assertThat(summary.twrReturnPercent()).isEqualByComparingTo("10.00");
+        assertThat(summary.xirrPercent()).isNotNull();
+        assertThat(summary.netCashflow()).isEqualByComparingTo("-300");
     }
 
     @Test
     void shouldCombineMainAndSubSeriesUsingLatestAvailableSnapshots() {
         PerformanceMetricsService service = service();
-        repository().append(snapshot("main", "2026-03-01T00:00:00Z", "1000", "300", "100", "300", "280"));
-        repository().append(snapshot("main", "2026-03-02T00:00:00Z", "1050", "260", "120", "350", "290"));
-        repository().append(snapshot("sub", "2026-03-01T12:00:00Z", "500", "140", "60", "140", "120"));
-        repository().append(snapshot("sub", "2026-03-02T12:00:00Z", "540", "120", "70", "180", "150"));
+        snapshotRepository().append(snapshot("main", "2026-03-01T00:00:00Z", "1000", "300", "100", "300", "280"));
+        snapshotRepository().append(snapshot("main", "2026-03-02T00:00:00Z", "1050", "260", "120", "350", "290"));
+        snapshotRepository().append(snapshot("sub", "2026-03-01T12:00:00Z", "500", "140", "60", "140", "120"));
+        snapshotRepository().append(snapshot("sub", "2026-03-02T12:00:00Z", "540", "120", "70", "180", "150"));
 
         var series = service.getSeries("combined", "all");
 
@@ -47,13 +82,19 @@ class PerformanceMetricsServiceTest {
     }
 
     private PerformanceMetricsService service() {
-        return new PerformanceMetricsService(repository());
+        return new PerformanceMetricsService(snapshotRepository(), cashflowRepository());
     }
 
-    private PerformanceSnapshotFileRepository repository() {
+    private PerformanceSnapshotFileRepository snapshotRepository() {
         PerformanceProperties properties = new PerformanceProperties();
         properties.setStoragePath(tempDir.toString());
         return new PerformanceSnapshotFileRepository(properties, new ObjectMapper());
+    }
+
+    private PerformanceCashflowFileRepository cashflowRepository() {
+        PerformanceProperties properties = new PerformanceProperties();
+        properties.setStoragePath(tempDir.toString());
+        return new PerformanceCashflowFileRepository(properties, new ObjectMapper());
     }
 
     private PerformanceSnapshot snapshot(
@@ -79,6 +120,27 @@ class PerformanceMetricsServiceTest {
                 new BigDecimal(unsettledInterest),
                 BigDecimal.ZERO,
                 "test"
+        );
+    }
+
+    private PerformanceCashflowEvent cashflow(
+            String account,
+            String capturedAt,
+            String amount,
+            PerformanceCashflowType type
+    ) {
+        return new PerformanceCashflowEvent(
+                account,
+                "fUSD",
+                "USD",
+                Instant.parse(capturedAt),
+                new BigDecimal(amount),
+                type,
+                account + ":" + capturedAt + ":" + type,
+                null,
+                "test",
+                type.name(),
+                null
         );
     }
 }

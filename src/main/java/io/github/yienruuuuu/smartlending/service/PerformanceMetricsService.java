@@ -1,5 +1,6 @@
 package io.github.yienruuuuu.smartlending.service;
 
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowEvent;
 import io.github.yienruuuuu.smartlending.model.PerformanceLatestSnapshotsDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSeriesPointDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSeriesResponseDto;
@@ -20,26 +21,36 @@ import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 
 /**
- * 依 snapshots 計算績效摘要與時間序列。
+ * 依 snapshots 與 cashflows 計算績效摘要與時間序列。
  */
 @Service
 public class PerformanceMetricsService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final BigDecimal ONE = BigDecimal.ONE;
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final MathContext MATH_CONTEXT = new MathContext(12, RoundingMode.HALF_UP);
+    private static final int XIRR_MAX_ITERATIONS = 50;
+    private static final double XIRR_TOLERANCE = 1.0e-7d;
 
     private final PerformanceSnapshotFileRepository repository;
+    private final PerformanceCashflowFileRepository cashflowRepository;
 
-    public PerformanceMetricsService(PerformanceSnapshotFileRepository repository) {
+    public PerformanceMetricsService(
+            PerformanceSnapshotFileRepository repository,
+            PerformanceCashflowFileRepository cashflowRepository
+    ) {
         this.repository = repository;
+        this.cashflowRepository = cashflowRepository;
     }
 
     public PerformanceSummaryDto getSummary(String account, String range) {
         String normalizedAccount = normalizeAccount(account);
         String normalizedRange = normalizeRange(range);
         List<PerformanceSeriesPointDto> points = buildSeriesPoints(normalizedAccount, normalizedRange);
+        List<PerformanceCashflowEvent> cashflows = buildCashflows(normalizedAccount, normalizedRange);
         if (points.isEmpty()) {
-            return emptySummary(normalizedAccount, normalizedRange);
+            return emptySummary(normalizedAccount, normalizedRange, cashflows.size(), netCashflow(cashflows));
         }
 
         PerformanceSeriesPointDto first = points.get(0);
@@ -49,11 +60,17 @@ public class PerformanceMetricsService {
         BigDecimal absoluteReturn = endValue.subtract(startValue);
         BigDecimal totalReturnRatio = ratio(absoluteReturn, startValue);
         BigDecimal annualizedReturnRatio = annualizedReturn(startValue, endValue, first.capturedAt(), last.capturedAt());
+        BigDecimal twrReturnRatio = calculateTwr(points, cashflows, "combined".equals(normalizedAccount));
+        BigDecimal twrAnnualizedReturnRatio = annualizeRatio(twrReturnRatio, first.capturedAt(), last.capturedAt());
+        BigDecimal xirrRatio = "combined".equals(normalizedAccount)
+                ? null
+                : calculateXirr(first.capturedAt(), last.capturedAt(), startValue, endValue, cashflows);
 
         return new PerformanceSummaryDto(
                 normalizedAccount,
                 normalizedRange,
                 points.size(),
+                cashflows.size(),
                 first.capturedAt(),
                 last.capturedAt(),
                 startValue,
@@ -63,6 +80,13 @@ public class PerformanceMetricsService {
                 percent(totalReturnRatio),
                 annualizedReturnRatio,
                 percent(annualizedReturnRatio),
+                twrReturnRatio,
+                percent(twrReturnRatio),
+                twrAnnualizedReturnRatio,
+                percent(twrAnnualizedReturnRatio),
+                xirrRatio,
+                xirrRatio == null ? null : percent(xirrRatio),
+                netCashflow(cashflows),
                 nullSafe(last.idleAmount()),
                 nullSafe(last.offerAmount()),
                 nullSafe(last.creditAmount()),
@@ -90,6 +114,13 @@ public class PerformanceMetricsService {
         return "combined".equals(account)
                 ? combinedSeries(range)
                 : singleAccountSeries(account, range);
+    }
+
+    private List<PerformanceCashflowEvent> buildCashflows(String account, String range) {
+        List<PerformanceCashflowEvent> cashflows = "combined".equals(account)
+                ? combinedCashflows()
+                : cashflowRepository.findByAccount(account);
+        return filterCashflowsByRange(cashflows, range);
     }
 
     private List<PerformanceSeriesPointDto> singleAccountSeries(String account, String range) {
@@ -131,6 +162,16 @@ public class PerformanceMetricsService {
                 .toList();
     }
 
+    private List<PerformanceCashflowEvent> combinedCashflows() {
+        return java.util.stream.Stream.concat(
+                        cashflowRepository.findByAccount("main").stream(),
+                        cashflowRepository.findByAccount("sub").stream()
+                )
+                .filter(event -> !event.type().isInternalTransfer())
+                .sorted(Comparator.comparing(PerformanceCashflowEvent::capturedAt))
+                .toList();
+    }
+
     private NavigableMap<Instant, PerformanceSnapshot> indexByTime(List<PerformanceSnapshot> snapshots) {
         NavigableMap<Instant, PerformanceSnapshot> map = new TreeMap<>();
         for (PerformanceSnapshot snapshot : snapshots) {
@@ -149,17 +190,39 @@ public class PerformanceMetricsService {
             return snapshots;
         }
 
-        Duration duration = switch (range) {
+        Duration duration = duration(range);
+        Instant cutoff = latestTimestamp.minus(duration);
+        return snapshots.stream()
+                .filter(snapshot -> !snapshot.capturedAt().isBefore(cutoff))
+                .toList();
+    }
+
+    private List<PerformanceCashflowEvent> filterCashflowsByRange(List<PerformanceCashflowEvent> cashflows, String range) {
+        if (cashflows.isEmpty() || "all".equals(range)) {
+            return cashflows;
+        }
+
+        Instant latestTimestamp = cashflows.stream()
+                .map(PerformanceCashflowEvent::capturedAt)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
+        if (latestTimestamp == null) {
+            return cashflows;
+        }
+
+        Instant cutoff = latestTimestamp.minus(duration(range));
+        return cashflows.stream()
+                .filter(event -> !event.capturedAt().isBefore(cutoff))
+                .toList();
+    }
+
+    private Duration duration(String range) {
+        return switch (range) {
             case "7d" -> Duration.ofDays(7);
             case "30d" -> Duration.ofDays(30);
             case "90d" -> Duration.ofDays(90);
             default -> throw new IllegalArgumentException("Unsupported range: " + range);
         };
-
-        Instant cutoff = latestTimestamp.minus(duration);
-        return snapshots.stream()
-                .filter(snapshot -> !snapshot.capturedAt().isBefore(cutoff))
-                .toList();
     }
 
     private PerformanceSeriesPointDto toPoint(PerformanceSnapshot snapshot) {
@@ -206,27 +269,35 @@ public class PerformanceMetricsService {
         );
     }
 
-    private PerformanceSummaryDto emptySummary(String account, String range) {
+    private PerformanceSummaryDto emptySummary(String account, String range, int cashflowCount, BigDecimal netCashflow) {
         return new PerformanceSummaryDto(
                 account,
                 range,
                 0,
+                cashflowCount,
                 null,
                 null,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                null,
+                null,
+                netCashflow,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO,
+                ZERO
         );
     }
 
@@ -250,31 +321,183 @@ public class PerformanceMetricsService {
 
     private BigDecimal annualizedReturn(BigDecimal startValue, BigDecimal endValue, Instant startAt, Instant endAt) {
         if (startAt == null || endAt == null || !endAt.isAfter(startAt)) {
-            return BigDecimal.ZERO;
+            return ZERO;
         }
-        if (startValue.compareTo(BigDecimal.ZERO) <= 0 || endValue.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+        if (startValue.compareTo(ZERO) <= 0 || endValue.compareTo(ZERO) <= 0) {
+            return ZERO;
         }
 
         double days = Duration.between(startAt, endAt).toSeconds() / 86400d;
         if (days <= 0d) {
-            return BigDecimal.ZERO;
+            return ZERO;
         }
 
         double annualized = Math.pow(endValue.divide(startValue, MATH_CONTEXT).doubleValue(), 365d / days) - 1d;
         if (!Double.isFinite(annualized)) {
-            return BigDecimal.ZERO;
+            return ZERO;
         }
         return BigDecimal.valueOf(annualized).setScale(8, RoundingMode.HALF_UP);
     }
 
+    private BigDecimal annualizeRatio(BigDecimal ratio, Instant startAt, Instant endAt) {
+        if (ratio == null || startAt == null || endAt == null || !endAt.isAfter(startAt)) {
+            return ZERO;
+        }
+        BigDecimal wealthRatio = ONE.add(ratio);
+        if (wealthRatio.compareTo(ZERO) <= 0) {
+            return ZERO;
+        }
+
+        double days = Duration.between(startAt, endAt).toSeconds() / 86400d;
+        if (days <= 0d) {
+            return ZERO;
+        }
+
+        double annualized = Math.pow(wealthRatio.doubleValue(), 365d / days) - 1d;
+        if (!Double.isFinite(annualized)) {
+            return ZERO;
+        }
+        return BigDecimal.valueOf(annualized).setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateTwr(
+            List<PerformanceSeriesPointDto> points,
+            List<PerformanceCashflowEvent> cashflows,
+            boolean ignoreInternalTransfers
+    ) {
+        if (points.size() < 2) {
+            return ZERO;
+        }
+
+        BigDecimal wealthRatio = ONE;
+        for (int index = 1; index < points.size(); index++) {
+            PerformanceSeriesPointDto previous = points.get(index - 1);
+            PerformanceSeriesPointDto current = points.get(index);
+            BigDecimal startValue = nullSafe(previous.totalWalletAmount());
+            BigDecimal endValue = nullSafe(current.totalWalletAmount());
+            if (startValue.compareTo(ZERO) <= 0) {
+                continue;
+            }
+
+            BigDecimal netCashflow = cashflows.stream()
+                    .filter(event -> event.capturedAt().isAfter(previous.capturedAt()))
+                    .filter(event -> !event.capturedAt().isAfter(current.capturedAt()))
+                    .filter(event -> !ignoreInternalTransfers || !event.type().isInternalTransfer())
+                    .map(PerformanceCashflowEvent::amount)
+                    .reduce(ZERO, BigDecimal::add);
+            BigDecimal periodReturn = endValue.subtract(startValue).subtract(netCashflow)
+                    .divide(startValue, 8, RoundingMode.HALF_UP);
+            wealthRatio = wealthRatio.multiply(ONE.add(periodReturn), MATH_CONTEXT);
+        }
+        return wealthRatio.subtract(ONE).setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateXirr(
+            Instant startAt,
+            Instant endAt,
+            BigDecimal startValue,
+            BigDecimal endValue,
+            List<PerformanceCashflowEvent> cashflows
+    ) {
+        if (startAt == null || endAt == null || !endAt.isAfter(startAt)) {
+            return null;
+        }
+        if (startValue.compareTo(ZERO) <= 0 || endValue.compareTo(ZERO) <= 0) {
+            return null;
+        }
+
+        List<DatedAmount> values = new ArrayList<>();
+        values.add(new DatedAmount(startAt, startValue.negate()));
+        values.addAll(cashflows.stream()
+                .map(event -> new DatedAmount(event.capturedAt(), event.amount().negate()))
+                .toList());
+        values.add(new DatedAmount(endAt, endValue));
+
+        boolean hasPositive = values.stream().anyMatch(item -> item.amount().compareTo(ZERO) > 0);
+        boolean hasNegative = values.stream().anyMatch(item -> item.amount().compareTo(ZERO) < 0);
+        if (!hasPositive || !hasNegative) {
+            return null;
+        }
+
+        Double solved = solveXirr(values);
+        if (solved == null || !Double.isFinite(solved)) {
+            return null;
+        }
+        return BigDecimal.valueOf(solved).setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private Double solveXirr(List<DatedAmount> values) {
+        double guess = 0.10d;
+        for (int i = 0; i < XIRR_MAX_ITERATIONS; i++) {
+            double npv = xnpv(guess, values);
+            double derivative = xnpvDerivative(guess, values);
+            if (Math.abs(derivative) < XIRR_TOLERANCE) {
+                break;
+            }
+            double next = guess - (npv / derivative);
+            if (Math.abs(next - guess) < XIRR_TOLERANCE && next > -0.999999d) {
+                return next;
+            }
+            if (!Double.isFinite(next) || next <= -0.999999d) {
+                break;
+            }
+            guess = next;
+        }
+
+        double low = -0.9999d;
+        double high = 10d;
+        double lowValue = xnpv(low, values);
+        double highValue = xnpv(high, values);
+        if (!Double.isFinite(lowValue) || !Double.isFinite(highValue) || Math.signum(lowValue) == Math.signum(highValue)) {
+            return null;
+        }
+
+        for (int i = 0; i < 200; i++) {
+            double mid = (low + high) / 2d;
+            double midValue = xnpv(mid, values);
+            if (!Double.isFinite(midValue)) {
+                return null;
+            }
+            if (Math.abs(midValue) < XIRR_TOLERANCE) {
+                return mid;
+            }
+            if (Math.signum(midValue) == Math.signum(lowValue)) {
+                low = mid;
+                lowValue = midValue;
+            } else {
+                high = mid;
+            }
+        }
+        return (low + high) / 2d;
+    }
+
+    private double xnpv(double rate, List<DatedAmount> values) {
+        Instant baseDate = values.get(0).timestamp();
+        double sum = 0d;
+        for (DatedAmount item : values) {
+            double years = Duration.between(baseDate, item.timestamp()).toSeconds() / 31536000d;
+            sum += item.amount().doubleValue() / Math.pow(1d + rate, years);
+        }
+        return sum;
+    }
+
+    private double xnpvDerivative(double rate, List<DatedAmount> values) {
+        Instant baseDate = values.get(0).timestamp();
+        double sum = 0d;
+        for (DatedAmount item : values) {
+            double years = Duration.between(baseDate, item.timestamp()).toSeconds() / 31536000d;
+            sum += (-years * item.amount().doubleValue()) / Math.pow(1d + rate, years + 1d);
+        }
+        return sum;
+    }
+
     private BigDecimal percent(BigDecimal ratio) {
-        return ratio.multiply(ONE_HUNDRED).setScale(2, RoundingMode.HALF_UP);
+        return ratio == null ? null : ratio.multiply(ONE_HUNDRED).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal ratio(BigDecimal numerator, BigDecimal denominator) {
-        if (denominator == null || denominator.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+        if (denominator == null || denominator.compareTo(ZERO) <= 0) {
+            return ZERO;
         }
         return nullSafe(numerator).divide(denominator, 8, RoundingMode.HALF_UP);
     }
@@ -283,8 +506,14 @@ public class PerformanceMetricsService {
         return nullSafe(left).add(nullSafe(right));
     }
 
+    private BigDecimal netCashflow(List<PerformanceCashflowEvent> cashflows) {
+        return cashflows.stream()
+                .map(PerformanceCashflowEvent::amount)
+                .reduce(ZERO, BigDecimal::add);
+    }
+
     private BigDecimal nullSafe(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
+        return value == null ? ZERO : value;
     }
 
     private Instant laterOf(Instant left, Instant right) {
@@ -305,5 +534,8 @@ public class PerformanceMetricsService {
             throw new IllegalArgumentException("range must be one of: 7d, 30d, 90d, all");
         }
         return normalized;
+    }
+
+    private record DatedAmount(Instant timestamp, BigDecimal amount) {
     }
 }

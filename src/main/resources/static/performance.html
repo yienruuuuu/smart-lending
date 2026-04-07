@@ -34,17 +34,26 @@
     <section class="summary-grid">
         <article class="card">
             <h2>合併</h2>
-            <p class="metric" id="combined-annualized">--</p>
+            <p class="metric-label">TWR 年化</p>
+            <p class="metric" id="combined-twr">--</p>
+            <p class="metric-label">XIRR</p>
+            <p class="secondary-metric" id="combined-xirr">不適用</p>
             <p class="detail" id="combined-wallet">資產 --</p>
         </article>
         <article class="card">
             <h2>主帳戶</h2>
-            <p class="metric" id="main-annualized">--</p>
+            <p class="metric-label">TWR 年化</p>
+            <p class="metric" id="main-twr">--</p>
+            <p class="metric-label">XIRR</p>
+            <p class="secondary-metric" id="main-xirr">--</p>
             <p class="detail" id="main-wallet">資產 --</p>
         </article>
         <article class="card">
             <h2>子帳戶</h2>
-            <p class="metric" id="sub-annualized">--</p>
+            <p class="metric-label">TWR 年化</p>
+            <p class="metric" id="sub-twr">--</p>
+            <p class="metric-label">XIRR</p>
+            <p class="secondary-metric" id="sub-xirr">--</p>
             <p class="detail" id="sub-wallet">資產 --</p>
         </article>
     </section>
@@ -58,12 +67,12 @@
             <div class="chart-stats">
                 <span id="range-return">報酬 --</span>
                 <span id="range-count">點數 --</span>
+                <span id="range-cashflow">現金流 --</span>
             </div>
         </div>
-        <svg id="chart" viewBox="0 0 800 260" preserveAspectRatio="none" aria-label="績效折線圖"></svg>
-        <div class="axis-labels">
-            <span id="axis-start">--</span>
-            <span id="axis-end">--</span>
+        <div class="chart-wrap">
+            <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" aria-label="績效折線圖"></svg>
+            <div id="chart-tooltip" class="chart-tooltip" hidden></div>
         </div>
     </section>
 </main>

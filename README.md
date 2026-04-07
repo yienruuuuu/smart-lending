@@ -235,7 +235,31 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 - `lentAmount`
 - `unsettledInterest`
 
-第一版年化報酬率是依快照資產曲線倒推的近似實際年化，不是含現金流事件的 XIRR；如果未來有明確入金、出金或主副帳互轉，建議再補事件式 ledger。
+績效計算目前同時提供兩種口徑：
+
+- `TWR`：以 snapshot 搭配 cashflow ledger 計算，偏向衡量策略績效
+- `XIRR`：只在 `main` / `sub` 提供，偏向衡量資金實際投報
+
+`combined` 只提供 `TWR`，且會忽略主副帳互轉，不把內部搬錢誤算成報酬。
+
+`main` / `sub` 會同時回傳：
+
+- 舊版資產曲線欄位：`totalReturn*`、`annualizedReturn*`
+- `TWR` 欄位：`twrReturn*`、`twrAnnualizedReturn*`
+- `XIRR` 欄位：`xirrRatio`、`xirrPercent`
+- 現金流摘要：`cashflowCount`、`netCashflow`
+
+如果某區間資料不足以求出 `XIRR`，欄位會回傳 `null`。
+
+系統會定時從 Bitfinex authenticated API 自動同步 performance cashflow ledger：
+
+- `v1/history/movements`：同步 `DEPOSIT` / `WITHDRAWAL`
+- `v1/history`：以官方 balance history 帳務項目辨識 `INTERNAL_TRANSFER_IN` / `INTERNAL_TRANSFER_OUT`
+
+同步後的 cashflow 會存到：
+
+- `data/performance/main-fusd-cashflows.jsonl`
+- `data/performance/sub-fusd-cashflows.jsonl`
 
 可透過 `.env` 或系統環境變數調整：
 
@@ -256,6 +280,7 @@ TELEGRAM_POLL_FIXED_DELAY_MILLIS=600000
 GET /api/v1/performance/summary?account=combined&range=30d
 GET /api/v1/performance/series?account=main&range=7d
 GET /api/v1/performance/snapshots/latest
+GET /api/v1/performance/cashflows?account=main&range=30d
 ```
 
 ## Telegram 狀態切換通知
