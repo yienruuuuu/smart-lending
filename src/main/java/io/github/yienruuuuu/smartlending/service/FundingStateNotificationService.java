@@ -45,17 +45,11 @@ public class FundingStateNotificationService {
 
         FundingStateBaseline baseline = baselineRepository.load();
         Optional<FundingStateSnapshot> currentMain = fundingStateSnapshotService.captureMain();
-        Optional<FundingStateSnapshot> currentSub = fundingStateSnapshotService.captureSub();
 
         currentMain.flatMap(current -> detectChange(baseline.main(), current))
                 .ifPresent(notification -> telegramNotificationClient.sendMessage(formatMessage(notification)));
-        currentSub.flatMap(current -> detectChange(baseline.sub(), current))
-                .ifPresent(notification -> telegramNotificationClient.sendMessage(formatMessage(notification)));
 
-        baselineRepository.save(new FundingStateBaseline(
-                currentMain.orElse(baseline.main()),
-                currentSub.orElse(baseline.sub())
-        ));
+        baselineRepository.save(new FundingStateBaseline(currentMain.orElse(baseline.main())));
     }
 
     Optional<FundingStateChangeNotification> detectChange(FundingStateSnapshot previous, FundingStateSnapshot current) {
@@ -126,7 +120,7 @@ public class FundingStateNotificationService {
     }
 
     private String accountLabel(String account) {
-        return "sub".equalsIgnoreCase(account) ? "子帳號" : "主要帳號";
+        return "主要帳號";
     }
 
     private String toPlainString(BigDecimal value) {

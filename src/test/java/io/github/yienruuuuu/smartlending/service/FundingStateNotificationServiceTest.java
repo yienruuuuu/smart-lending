@@ -37,8 +37,8 @@ class FundingStateNotificationServiceTest {
     @Test
     void shouldDetectRepaidTransition() {
         Optional<?> result = service.detectChange(
-                snapshot("sub", "2026-04-02T00:00:00Z", "0", "300", null),
-                snapshot("sub", "2026-04-02T00:10:00Z", "300", "0", "0.00042")
+                snapshot("main", "2026-04-02T00:00:00Z", "0", "300", null),
+                snapshot("main", "2026-04-02T00:10:00Z", "300", "0", "0.00042")
         );
 
         assertThat(result).isPresent();

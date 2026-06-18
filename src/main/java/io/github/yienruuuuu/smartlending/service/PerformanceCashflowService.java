@@ -1,9 +1,10 @@
 package io.github.yienruuuuu.smartlending.service;
 
 import io.github.yienruuuuu.smartlending.config.BitfinexProperties;
-import io.github.yienruuuuu.smartlending.model.BitfinexBalanceHistoryEntry;
-import io.github.yienruuuuu.smartlending.model.BitfinexMovementHistoryEntry;
+import io.github.yienruuuuu.smartlending.model.BitfinexLedgerEntry;
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowEvent;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowSyncAccountResultDto;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowSyncResponseDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowSyncState;
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowType;
 import io.github.yienruuuuu.smartlending.model.PerformanceSnapshot;
@@ -27,10 +28,11 @@ public class PerformanceCashflowService {
     private static final String TARGET_CURRENCY = "USD";
     private static final Duration SYNC_OVERLAP = Duration.ofDays(1);
     private static final Duration DEFAULT_BOOTSTRAP_LOOKBACK = Duration.ofDays(180);
+    private static final int LEDGER_SYNC_LIMIT = 250;
+    private static final int IGNORED_SAMPLE_LIMIT = 8;
 
     private final BitfinexProperties bitfinexProperties;
     private final BitfinexAccountRestClient bitfinexAccountRestClient;
-    private final SubBitfinexAccountRestClient subBitfinexAccountRestClient;
     private final PerformanceSnapshotFileRepository snapshotRepository;
     private final PerformanceCashflowFileRepository cashflowRepository;
     private final PerformanceCashflowSyncStateRepository syncStateRepository;
@@ -38,14 +40,12 @@ public class PerformanceCashflowService {
     public PerformanceCashflowService(
             BitfinexProperties bitfinexProperties,
             BitfinexAccountRestClient bitfinexAccountRestClient,
-            SubBitfinexAccountRestClient subBitfinexAccountRestClient,
             PerformanceSnapshotFileRepository snapshotRepository,
             PerformanceCashflowFileRepository cashflowRepository,
             PerformanceCashflowSyncStateRepository syncStateRepository
     ) {
         this.bitfinexProperties = bitfinexProperties;
         this.bitfinexAccountRestClient = bitfinexAccountRestClient;
-        this.subBitfinexAccountRestClient = subBitfinexAccountRestClient;
         this.snapshotRepository = snapshotRepository;
         this.cashflowRepository = cashflowRepository;
         this.syncStateRepository = syncStateRepository;
@@ -60,28 +60,22 @@ public class PerformanceCashflowService {
                 .toList();
     }
 
-    public int syncAll() {
+    public PerformanceCashflowSyncResponseDto syncAll() {
         PerformanceCashflowSyncState previousState = syncStateRepository.load();
         Instant now = Instant.now();
-        int mainCount = syncAccount("main", previousState.mainLastSyncedAt(), now);
-        int subCount = syncAccount("sub", previousState.subLastSyncedAt(), now);
+        PerformanceCashflowSyncAccountResultDto mainResult = syncMain(previousState.mainLastSyncedAt(), now);
         syncStateRepository.save(new PerformanceCashflowSyncState(
-                bitfinexProperties.hasMainAccountCredentials() ? now : previousState.mainLastSyncedAt(),
-                bitfinexProperties.hasSubAccountCredentials() ? now : previousState.subLastSyncedAt()
+                bitfinexProperties.hasMainAccountCredentials() ? now : previousState.mainLastSyncedAt()
         ));
-        return mainCount + subCount;
+        return new PerformanceCashflowSyncResponseDto(
+                now,
+                mainResult.cashflowSyncedCount(),
+                "cashflow sync completed",
+                List.of(mainResult)
+        );
     }
 
     List<PerformanceCashflowEvent> loadCashflows(String account) {
-        if ("combined".equals(account)) {
-            return java.util.stream.Stream.concat(
-                            cashflowRepository.findByAccount("main").stream(),
-                            cashflowRepository.findByAccount("sub").stream()
-                    )
-                    .sorted(Comparator.comparing(PerformanceCashflowEvent::capturedAt)
-                            .thenComparing(PerformanceCashflowEvent::referenceId))
-                    .toList();
-        }
         return cashflowRepository.findByAccount(account);
     }
 
@@ -108,26 +102,46 @@ public class PerformanceCashflowService {
                 .toList();
     }
 
-    private int syncAccount(String account, Instant lastSyncedAt, Instant now) {
-        if ("main".equals(account) && !bitfinexProperties.hasMainAccountCredentials()) {
+    private PerformanceCashflowSyncAccountResultDto syncMain(Instant lastSyncedAt, Instant now) {
+        if (!bitfinexProperties.hasMainAccountCredentials()) {
             log.debug("略過 main cashflow sync：未設定主帳戶 API 憑證");
-            return 0;
-        }
-        if ("sub".equals(account) && !bitfinexProperties.hasSubAccountCredentials()) {
-            log.debug("略過 sub cashflow sync：未設定 sub account API 憑證");
-            return 0;
+            return new PerformanceCashflowSyncAccountResultDto("main", 0, 0, 0, List.of());
         }
 
-        Instant since = resolveSince(account, lastSyncedAt, now);
+        Instant since = resolveSince("main", lastSyncedAt, now);
+        List<BitfinexLedgerEntry> ledgers = bitfinexAccountRestClient.getLedgerHistory(TARGET_CURRENCY, since, now, LEDGER_SYNC_LIMIT);
         List<PerformanceCashflowEvent> mergedEvents = new ArrayList<>();
-        mergedEvents.addAll(fetchMovements(account, since, now));
-        mergedEvents.addAll(fetchInternalTransfers(account, since, now));
-        cashflowRepository.merge(account, mergedEvents);
-        log.info("已完成 performance cashflow 同步。account={}, since={}, until={}, syncedCount={}", account, since, now, mergedEvents.size());
-        return mergedEvents.size();
+        List<String> ignoredSamples = new ArrayList<>();
+        int ignoredCount = 0;
+        for (BitfinexLedgerEntry ledger : ledgers) {
+            PerformanceCashflowEvent event = toLedgerCashflow("main", ledger);
+            if (event == null) {
+                ignoredCount++;
+                if (ignoredSamples.size() < IGNORED_SAMPLE_LIMIT) {
+                    ignoredSamples.add("%s %s %s".formatted(ledger.wallet(), ledger.amount(), nullSafe(ledger.description())));
+                }
+            } else {
+                mergedEvents.add(event);
+            }
+        }
+        cashflowRepository.merge("main", mergedEvents);
+        log.info("已完成 performance cashflow 同步。account=main, since={}, until={}, ledgerCount={}, syncedCount={}, ignoredCount={}",
+                since, now, ledgers.size(), mergedEvents.size(), ignoredCount);
+        return new PerformanceCashflowSyncAccountResultDto(
+                "main",
+                ledgers.size(),
+                mergedEvents.size(),
+                ignoredCount,
+                ignoredSamples
+        );
     }
 
     private Instant resolveSince(String account, Instant lastSyncedAt, Instant now) {
+        if (cashflowRepository.findByAccount(account).isEmpty()) {
+            return earliestSnapshotAt(account)
+                    .map(value -> value.minus(SYNC_OVERLAP))
+                    .orElse(now.minus(DEFAULT_BOOTSTRAP_LOOKBACK));
+        }
         if (lastSyncedAt != null) {
             return lastSyncedAt.minus(SYNC_OVERLAP);
         }
@@ -143,78 +157,15 @@ public class PerformanceCashflowService {
                 .min(Comparator.naturalOrder());
     }
 
-    private List<PerformanceCashflowEvent> fetchMovements(String account, Instant since, Instant until) {
-        List<BitfinexMovementHistoryEntry> movements = "main".equals(account)
-                ? bitfinexAccountRestClient.getMovementHistory(TARGET_CURRENCY, since, until)
-                : subBitfinexAccountRestClient.getMovementHistory(TARGET_CURRENCY, since, until);
-
-        return movements.stream()
-                .filter(this::isSettledMovement)
-                .map(entry -> toMovementEvent(account, entry))
-                .filter(Objects::nonNull)
-                .toList();
-    }
-
-    private List<PerformanceCashflowEvent> fetchInternalTransfers(String account, Instant since, Instant until) {
-        List<BitfinexBalanceHistoryEntry> entries = "main".equals(account)
-                ? bitfinexAccountRestClient.getBalanceHistory(TARGET_CURRENCY, since, until)
-                : subBitfinexAccountRestClient.getBalanceHistory(TARGET_CURRENCY, since, until);
-
-        return entries.stream()
-                .filter(this::isFundingTransferEntry)
-                .map(entry -> toInternalTransferEvent(account, entry))
-                .filter(Objects::nonNull)
-                .toList();
-    }
-
-    private boolean isSettledMovement(BitfinexMovementHistoryEntry entry) {
-        String status = normalizeText(entry.status());
-        return status != null && status.contains("completed");
-    }
-
-    private PerformanceCashflowEvent toMovementEvent(String account, BitfinexMovementHistoryEntry entry) {
-        Instant capturedAt = entry.updatedAt();
-        if (capturedAt == null || entry.amount() == null || entry.amount().compareTo(BigDecimal.ZERO) == 0) {
-            return null;
-        }
-
-        String typeText = normalizeText(entry.type());
-        PerformanceCashflowType type;
-        if (typeText != null && typeText.contains("withdraw")) {
-            type = PerformanceCashflowType.WITHDRAWAL;
-        } else if (typeText != null && typeText.contains("deposit")) {
-            type = PerformanceCashflowType.DEPOSIT;
-        } else {
-            return null;
-        }
-
-        return new PerformanceCashflowEvent(
-                account,
-                TARGET_SYMBOL,
-                TARGET_CURRENCY,
-                capturedAt,
-                type.toSignedAmount(entry.amount()),
-                type,
-                movementReferenceId(account, entry),
-                null,
-                "bitfinex-v1-movements",
-                entry.type(),
-                entry.method()
-        );
-    }
-
-    private boolean isFundingTransferEntry(BitfinexBalanceHistoryEntry entry) {
+    private PerformanceCashflowEvent toLedgerCashflow(String account, BitfinexLedgerEntry entry) {
         if (entry.timestamp() == null || entry.amount() == null || entry.amount().compareTo(BigDecimal.ZERO) == 0) {
-            return false;
+            return null;
         }
+        String wallet = normalizeText(entry.wallet());
         String description = normalizeText(entry.description());
-        if (description == null || !description.contains("transfer")) {
-            return false;
+        if (!"funding".equals(wallet) || description == null || !description.contains("transfer")) {
+            return null;
         }
-        return description.contains("funding") || description.contains("deposit wallet");
-    }
-
-    private PerformanceCashflowEvent toInternalTransferEvent(String account, BitfinexBalanceHistoryEntry entry) {
         PerformanceCashflowType type = entry.amount().compareTo(BigDecimal.ZERO) > 0
                 ? PerformanceCashflowType.INTERNAL_TRANSFER_IN
                 : PerformanceCashflowType.INTERNAL_TRANSFER_OUT;
@@ -225,37 +176,22 @@ public class PerformanceCashflowService {
                 entry.timestamp(),
                 type.toSignedAmount(entry.amount().abs()),
                 type,
-                balanceHistoryReferenceId(account, entry),
+                ledgerReferenceId(account, entry),
                 null,
-                "bitfinex-v1-history",
-                "transfer",
+                "bitfinex-v2-ledger",
+                "ledger",
                 entry.description()
         );
     }
 
-    private String movementReferenceId(String account, BitfinexMovementHistoryEntry entry) {
-        String txId = entry.transactionId() == null ? "-" : entry.transactionId();
-        return "%s:movement:%s:%s:%s".formatted(
-                account,
-                nullSafe(entry.id()),
-                txId,
-                entry.updatedAt() == null ? "-" : entry.updatedAt().toEpochMilli()
-        );
-    }
-
-    private String balanceHistoryReferenceId(String account, BitfinexBalanceHistoryEntry entry) {
-        return "%s:history:%s:%s:%s".formatted(
-                account,
-                entry.timestamp() == null ? "-" : entry.timestamp().toEpochMilli(),
-                entry.amount() == null ? "-" : entry.amount().stripTrailingZeros().toPlainString(),
-                Integer.toHexString(nullSafe(entry.description()).hashCode())
-        );
+    private String ledgerReferenceId(String account, BitfinexLedgerEntry entry) {
+        return "%s:ledger:%s".formatted(account, entry.id());
     }
 
     private String normalizeQueryAccount(String account) {
-        String normalized = account == null || account.isBlank() ? "combined" : account.trim().toLowerCase(Locale.ROOT);
-        if (!List.of("main", "sub", "combined").contains(normalized)) {
-            throw new IllegalArgumentException("account must be one of: main, sub, combined");
+        String normalized = account == null || account.isBlank() ? "main" : account.trim().toLowerCase(Locale.ROOT);
+        if (!"main".equals(normalized)) {
+            throw new IllegalArgumentException("account must be main");
         }
         return normalized;
     }

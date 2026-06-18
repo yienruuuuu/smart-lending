@@ -11,6 +11,8 @@ public record PerformanceSeriesPointDto(
         BigDecimal creditAmount,
         BigDecimal loanAmount,
         BigDecimal lentAmount,
-        BigDecimal unsettledInterest
+        BigDecimal unsettledInterest,
+        BigDecimal twrIndex,
+        BigDecimal periodCashflow
 ) {
 }

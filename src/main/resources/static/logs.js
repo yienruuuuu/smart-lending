@@ -1,5 +1,5 @@
 const logsState = {
-    account: "combined",
+    account: "main",
     range: "30d",
     type: "all",
     q: "",
@@ -13,11 +13,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function bindLogsControls() {
-    byId("account-select").addEventListener("change", (event) => {
-        logsState.account = event.target.value;
-        logsState.page = 0;
-        refreshLogs().catch(renderLogsError);
-    });
     byId("range-select").addEventListener("change", (event) => {
         logsState.range = event.target.value;
         logsState.page = 0;
@@ -317,14 +312,8 @@ function formatAxisTimestamp(value) {
 }
 
 function accountLabel(value) {
-    if (value === "combined") {
-        return "合併";
-    }
     if (value === "main") {
         return "主帳戶";
-    }
-    if (value === "sub") {
-        return "子帳戶";
     }
     return value || "--";
 }

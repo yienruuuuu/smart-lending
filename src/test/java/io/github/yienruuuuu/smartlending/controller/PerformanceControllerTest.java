@@ -1,6 +1,9 @@
 package io.github.yienruuuuu.smartlending.controller;
 
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowEvent;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowStatus;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowSyncAccountResultDto;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowSyncResponseDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowType;
 import io.github.yienruuuuu.smartlending.model.PerformanceLatestSnapshotsDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceLogRowDto;
@@ -25,6 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,9 +48,9 @@ class PerformanceControllerTest {
     private PerformanceLogsService performanceLogsService;
 
     @Test
-    void shouldReturnPerformanceSummary() throws Exception {
-        when(performanceMetricsService.getSummary("combined", "30d")).thenReturn(new PerformanceSummaryDto(
-                "combined",
+    void shouldReturnMainPerformanceSummary() throws Exception {
+        when(performanceMetricsService.getSummary("main", "30d")).thenReturn(new PerformanceSummaryDto(
+                "main",
                 "30d",
                 2,
                 0,
@@ -63,8 +67,8 @@ class PerformanceControllerTest {
                 new BigDecimal("10.00"),
                 new BigDecimal("2.18868048"),
                 new BigDecimal("218.87"),
-                null,
-                null,
+                new BigDecimal("2.18868048"),
+                new BigDecimal("218.87"),
                 BigDecimal.ZERO,
                 new BigDecimal("250"),
                 new BigDecimal("150"),
@@ -72,22 +76,25 @@ class PerformanceControllerTest {
                 BigDecimal.ZERO,
                 new BigDecimal("450"),
                 new BigDecimal("30"),
-                new BigDecimal("0.40909091")
+                new BigDecimal("0.40909091"),
+                PerformanceCashflowStatus.EMPTY,
+                "尚未同步 cashflow ledger，績效可能把入金或轉出誤算成報酬。"
         ));
 
         mockMvc.perform(get("/api/v1/performance/summary")
-                        .param("account", "combined")
+                        .param("account", "main")
                         .param("range", "30d"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.account").value("combined"))
+                .andExpect(jsonPath("$.account").value("main"))
                 .andExpect(jsonPath("$.twrAnnualizedReturnPercent").value(218.87))
-                .andExpect(jsonPath("$.xirrPercent").doesNotExist());
+                .andExpect(jsonPath("$.cashflowStatus").value("EMPTY"))
+                .andExpect(jsonPath("$.xirrPercent").value(218.87));
 
-        verify(performanceMetricsService).getSummary("combined", "30d");
+        verify(performanceMetricsService).getSummary("main", "30d");
     }
 
     @Test
-    void shouldReturnPerformanceSeries() throws Exception {
+    void shouldReturnMainPerformanceSeries() throws Exception {
         when(performanceMetricsService.getSeries("main", "7d")).thenReturn(new PerformanceSeriesResponseDto(
                 "main",
                 "7d",
@@ -100,7 +107,9 @@ class PerformanceControllerTest {
                         BigDecimal.ZERO,
                         BigDecimal.ZERO,
                         new BigDecimal("450"),
-                        new BigDecimal("30")
+                        new BigDecimal("30"),
+                        new BigDecimal("100.00000000"),
+                        BigDecimal.ZERO
                 ))
         ));
 
@@ -108,26 +117,29 @@ class PerformanceControllerTest {
                         .param("account", "main")
                         .param("range", "7d"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.account").value("main"))
                 .andExpect(jsonPath("$.pointCount").value(1))
-                .andExpect(jsonPath("$.points[0].totalWalletAmount").value(1100));
+                .andExpect(jsonPath("$.points[0].totalWalletAmount").value(1100))
+                .andExpect(jsonPath("$.points[0].twrIndex").value(100.00000000))
+                .andExpect(jsonPath("$.points[0].periodCashflow").value(0));
     }
 
     @Test
-    void shouldReturnLatestSnapshots() throws Exception {
+    void shouldReturnMainLatestSnapshot() throws Exception {
         when(performanceMetricsService.getLatestSnapshots()).thenReturn(new PerformanceLatestSnapshotsDto(
-                new PerformanceSnapshot("main", "fUSD", "USD", Instant.parse("2026-03-31T00:00:00Z"), new BigDecimal("1100"), new BigDecimal("250"), new BigDecimal("150"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("450"), new BigDecimal("30"), new BigDecimal("0.4"), "test"),
-                new PerformanceSnapshot("sub", "fUSD", "USD", Instant.parse("2026-03-31T00:00:00Z"), new BigDecimal("500"), new BigDecimal("100"), new BigDecimal("80"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("220"), new BigDecimal("15"), new BigDecimal("0.44"), "test"),
-                new PerformanceSnapshot("combined", "fUSD", "USD", Instant.parse("2026-03-31T00:00:00Z"), new BigDecimal("1600"), new BigDecimal("350"), new BigDecimal("230"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("670"), new BigDecimal("45"), new BigDecimal("0.41875"), "aggregated")
+                new PerformanceSnapshot("main", "fUSD", "USD", Instant.parse("2026-03-31T00:00:00Z"), new BigDecimal("1100"), new BigDecimal("250"), new BigDecimal("150"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("450"), new BigDecimal("30"), new BigDecimal("0.4"), "test")
         ));
 
         mockMvc.perform(get("/api/v1/performance/snapshots/latest"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.combined.totalWalletAmount").value(1600))
-                .andExpect(jsonPath("$.main.account").value("main"));
+                .andExpect(jsonPath("$.main.account").value("main"))
+                .andExpect(jsonPath("$.main.totalWalletAmount").value(1100))
+                .andExpect(jsonPath("$.combined").doesNotExist())
+                .andExpect(jsonPath("$.sub").doesNotExist());
     }
 
     @Test
-    void shouldReturnCashflows() throws Exception {
+    void shouldReturnMainCashflows() throws Exception {
         when(performanceCashflowService.getCashflows("main", "30d")).thenReturn(List.of(
                 new PerformanceCashflowEvent(
                         "main",
@@ -136,11 +148,11 @@ class PerformanceControllerTest {
                         Instant.parse("2026-03-15T00:00:00Z"),
                         new BigDecimal("-300"),
                         PerformanceCashflowType.INTERNAL_TRANSFER_OUT,
-                        "main:history:1",
-                        "sub",
-                        "bitfinex-v1-history",
-                        "transfer",
-                        "rebalance"
+                        "main:ledger:1",
+                        null,
+                        "bitfinex-v2-ledger",
+                        "ledger",
+                        "Transfer of 300 USD from wallet Funding to Deposit on wallet exchange"
                 )
         ));
 
@@ -149,14 +161,34 @@ class PerformanceControllerTest {
                         .param("range", "30d"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("INTERNAL_TRANSFER_OUT"))
+                .andExpect(jsonPath("$[0].source").value("bitfinex-v2-ledger"))
                 .andExpect(jsonPath("$[0].amount").value(-300));
     }
 
     @Test
-    void shouldReturnPerformanceLogs() throws Exception {
-        when(performanceLogsService.getLogs("combined", "30d", "all", null, 0, 50)).thenReturn(
+    void shouldManuallySyncCashflows() throws Exception {
+        when(performanceCashflowService.syncAll()).thenReturn(new PerformanceCashflowSyncResponseDto(
+                Instant.parse("2026-06-18T00:00:00Z"),
+                2,
+                "cashflow sync completed",
+                List.of(new PerformanceCashflowSyncAccountResultDto("main", 4, 2, 2, List.of("funding 1.23 Margin Funding Payment")))
+        ));
+
+        mockMvc.perform(post("/api/v1/performance/cashflows/sync"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.syncedCount").value(2))
+                .andExpect(jsonPath("$.message").value("cashflow sync completed"))
+                .andExpect(jsonPath("$.accounts[0].account").value("main"))
+                .andExpect(jsonPath("$.accounts[0].ledgerFetchedCount").value(4));
+
+        verify(performanceCashflowService).syncAll();
+    }
+
+    @Test
+    void shouldReturnMainPerformanceLogs() throws Exception {
+        when(performanceLogsService.getLogs("main", "30d", "all", null, 0, 50)).thenReturn(
                 new PerformanceLogsResponseDto(
-                        "combined",
+                        "main",
                         "30d",
                         "all",
                         null,
@@ -176,7 +208,7 @@ class PerformanceControllerTest {
                         List.of(
                                 new PerformanceLogRowDto(
                                         "snapshot",
-                                        "combined",
+                                        "main",
                                         Instant.parse("2026-03-31T00:00:00Z"),
                                         "資產快照",
                                         "snapshot",
@@ -185,8 +217,8 @@ class PerformanceControllerTest {
                                         new BigDecimal("250"),
                                         new BigDecimal("450"),
                                         new BigDecimal("0.4"),
-                                        "snapshot:combined:1",
-                                        "aggregated",
+                                        "snapshot:main:1",
+                                        "bitfinex-live",
                                         "snapshot",
                                         "wallet=USD"
                                 )
@@ -195,13 +227,14 @@ class PerformanceControllerTest {
         );
 
         mockMvc.perform(get("/api/v1/performance/logs")
-                        .param("account", "combined")
+                        .param("account", "main")
                         .param("range", "30d")
                         .param("type", "all")
                         .param("page", "0")
                         .param("size", "50"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.account").value("main"))
                 .andExpect(jsonPath("$.summary.eventCount").value(2))
-                .andExpect(jsonPath("$.items[0].kind").value("snapshot"));
+                .andExpect(jsonPath("$.items[0].account").value("main"));
     }
 }

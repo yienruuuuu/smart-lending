@@ -4,8 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.yienruuuuu.smartlending.config.BitfinexProperties;
-import io.github.yienruuuuu.smartlending.model.BitfinexBalanceHistoryEntry;
-import io.github.yienruuuuu.smartlending.model.BitfinexMovementHistoryEntry;
+import io.github.yienruuuuu.smartlending.model.BitfinexLedgerEntry;
 import io.github.yienruuuuu.smartlending.model.WalletBalanceDto;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -14,7 +13,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
@@ -82,56 +80,30 @@ public class BitfinexAccountRestClient {
         return wallets;
     }
 
-    public List<BitfinexMovementHistoryEntry> getMovementHistory(String currency, Instant since, Instant until) {
+    public List<BitfinexLedgerEntry> getLedgerHistory(String currency, Instant since, Instant until, int limit) {
         ObjectNode body = objectMapper.createObjectNode();
-        body.put("currency", currency);
-        body.put("since", since.toEpochMilli());
-        body.put("until", until.toEpochMilli());
-        JsonNode root = postAuthenticatedV1("v1/history/movements", body);
+        body.put("start", since.toEpochMilli());
+        body.put("end", until.toEpochMilli());
+        body.put("limit", limit);
+        body.put("sort", -1);
+        JsonNode root = postAuthenticated("v2/auth/r/ledgers/%s/hist".formatted(currency), body.toString());
         if (!root.isArray()) {
-            throw new IllegalStateException("Unexpected movements response: " + root);
+            throw new IllegalStateException("Unexpected ledgers response: " + root);
         }
 
-        List<BitfinexMovementHistoryEntry> entries = new ArrayList<>();
+        List<BitfinexLedgerEntry> entries = new ArrayList<>();
         for (JsonNode item : root) {
-            entries.add(new BitfinexMovementHistoryEntry(
-                    item.path("id").asText(),
-                    item.path("currency").asText(),
-                    item.path("method").asText(null),
-                    item.path("type").asText(null),
-                    item.path("status").asText(null),
-                    decimalOrZero(item, "amount").abs(),
-                    decimalOrZero(item, "fees"),
-                    instantOrNull(item.path("timestamp")),
-                    item.path("txid").asText(null),
-                    item.path("address").asText(null)
+            entries.add(new BitfinexLedgerEntry(
+                    item.path(0).asLong(),
+                    item.path(1).asText(),
+                    item.path(2).asText(),
+                    instantFromMillisOrNull(item.path(3)),
+                    decimalOrZero(item, 5),
+                    decimalOrZero(item, 6),
+                    item.path(8).asText(null)
             ));
         }
-        log.info("已從 Bitfinex v1 API 取得 movement history。currency={}, count={}", currency, entries.size());
-        return entries;
-    }
-
-    public List<BitfinexBalanceHistoryEntry> getBalanceHistory(String currency, Instant since, Instant until) {
-        ObjectNode body = objectMapper.createObjectNode();
-        body.put("currency", currency);
-        body.put("since", since.toEpochMilli());
-        body.put("until", until.toEpochMilli());
-        JsonNode root = postAuthenticatedV1("v1/history", body);
-        if (!root.isArray()) {
-            throw new IllegalStateException("Unexpected balance history response: " + root);
-        }
-
-        List<BitfinexBalanceHistoryEntry> entries = new ArrayList<>();
-        for (JsonNode item : root) {
-            entries.add(new BitfinexBalanceHistoryEntry(
-                    item.path("currency").asText(),
-                    decimalOrZero(item, "amount"),
-                    decimalOrZero(item, "balance"),
-                    item.path("description").asText(null),
-                    instantOrNull(item.path("timestamp"))
-            ));
-        }
-        log.info("已從 Bitfinex v1 API 取得 balance history。currency={}, count={}", currency, entries.size());
+        log.info("已從 Bitfinex v2 API 取得 ledger history。currency={}, count={}", currency, entries.size());
         return entries;
     }
 
@@ -169,39 +141,6 @@ public class BitfinexAccountRestClient {
         }
     }
 
-    public JsonNode postAuthenticatedV1(String apiPath, ObjectNode payload) {
-        validateCredentials();
-
-        String nonce = String.valueOf(nonceCounter.incrementAndGet());
-        payload.put("request", "/" + apiPath);
-        payload.put("nonce", nonce);
-
-        try {
-            String body = objectMapper.writeValueAsString(payload);
-            String encodedPayload = Base64.getEncoder().encodeToString(body.getBytes(StandardCharsets.UTF_8));
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("X-BFX-APIKEY", properties.getApiKey());
-            headers.set("X-BFX-PAYLOAD", encodedPayload);
-            headers.set("X-BFX-SIGNATURE", sign(encodedPayload, properties.getApiSecret()));
-
-            String url = restBaseUrl + "/" + apiPath;
-            String responseBody = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    new HttpEntity<>(body, headers),
-                    String.class
-            ).getBody();
-            return objectMapper.readTree(responseBody);
-        } catch (RestClientException exception) {
-            log.error("Bitfinex v1 REST 請求失敗。endpoint={}", apiPath, exception);
-            throw new IllegalStateException("Bitfinex v1 REST request failed", exception);
-        } catch (Exception exception) {
-            log.error("解析 Bitfinex v1 回應失敗。endpoint={}", apiPath, exception);
-            throw new IllegalStateException("Failed to parse Bitfinex v1 response", exception);
-        }
-    }
-
     private void validateCredentials() {
         if (!StringUtils.hasText(properties.getApiKey()) || !StringUtils.hasText(properties.getApiSecret())) {
             throw new IllegalStateException("BITFINEX_API_KEY and BITFINEX_API_SECRET must be configured");
@@ -231,23 +170,10 @@ public class BitfinexAccountRestClient {
         return child.decimalValue();
     }
 
-    private BigDecimal decimalOrZero(JsonNode node, String field) {
-        JsonNode child = node.path(field);
-        if (child.isMissingNode() || child.isNull()) {
-            return BigDecimal.ZERO;
-        }
-        return child.decimalValue();
-    }
-
-    private Instant instantOrNull(JsonNode node) {
+    private Instant instantFromMillisOrNull(JsonNode node) {
         if (node.isMissingNode() || node.isNull()) {
             return null;
         }
-        String value = node.asText();
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        long timestamp = Long.parseLong(value);
-        return Instant.ofEpochMilli(timestamp);
+        return Instant.ofEpochMilli(node.asLong());
     }
 }

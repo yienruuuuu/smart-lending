@@ -1,6 +1,7 @@
 package io.github.yienruuuuu.smartlending.service;
 
 import io.github.yienruuuuu.smartlending.model.PerformanceCashflowEvent;
+import io.github.yienruuuuu.smartlending.model.PerformanceCashflowStatus;
 import io.github.yienruuuuu.smartlending.model.PerformanceLatestSnapshotsDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSeriesPointDto;
 import io.github.yienruuuuu.smartlending.model.PerformanceSeriesResponseDto;
@@ -13,11 +14,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,28 +25,33 @@ import org.springframework.stereotype.Service;
 public class PerformanceMetricsService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final BigDecimal TWR_INDEX_BASE = new BigDecimal("100");
     private static final BigDecimal ONE = BigDecimal.ONE;
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final MathContext MATH_CONTEXT = new MathContext(12, RoundingMode.HALF_UP);
+    private static final Duration CASHFLOW_STALE_AFTER = Duration.ofMinutes(30);
     private static final int XIRR_MAX_ITERATIONS = 50;
     private static final double XIRR_TOLERANCE = 1.0e-7d;
 
     private final PerformanceSnapshotFileRepository repository;
     private final PerformanceCashflowFileRepository cashflowRepository;
+    private final PerformanceCashflowSyncStateRepository syncStateRepository;
 
     public PerformanceMetricsService(
             PerformanceSnapshotFileRepository repository,
-            PerformanceCashflowFileRepository cashflowRepository
+            PerformanceCashflowFileRepository cashflowRepository,
+            PerformanceCashflowSyncStateRepository syncStateRepository
     ) {
         this.repository = repository;
         this.cashflowRepository = cashflowRepository;
+        this.syncStateRepository = syncStateRepository;
     }
 
     public PerformanceSummaryDto getSummary(String account, String range) {
         String normalizedAccount = normalizeAccount(account);
         String normalizedRange = normalizeRange(range);
-        List<PerformanceSeriesPointDto> points = buildSeriesPoints(normalizedAccount, normalizedRange);
         List<PerformanceCashflowEvent> cashflows = buildCashflows(normalizedAccount, normalizedRange);
+        List<PerformanceSeriesPointDto> points = buildSeriesPoints(normalizedAccount, normalizedRange, cashflows);
         if (points.isEmpty()) {
             return emptySummary(normalizedAccount, normalizedRange, cashflows.size(), netCashflow(cashflows));
         }
@@ -60,11 +63,15 @@ public class PerformanceMetricsService {
         BigDecimal absoluteReturn = endValue.subtract(startValue);
         BigDecimal totalReturnRatio = ratio(absoluteReturn, startValue);
         BigDecimal annualizedReturnRatio = annualizedReturn(startValue, endValue, first.capturedAt(), last.capturedAt());
-        BigDecimal twrReturnRatio = calculateTwr(points, cashflows, "combined".equals(normalizedAccount));
+        BigDecimal twrReturnRatio = calculateTwr(points, cashflows, false);
         BigDecimal twrAnnualizedReturnRatio = annualizeRatio(twrReturnRatio, first.capturedAt(), last.capturedAt());
-        BigDecimal xirrRatio = "combined".equals(normalizedAccount)
-                ? null
-                : calculateXirr(first.capturedAt(), last.capturedAt(), startValue, endValue, cashflows);
+        BigDecimal xirrRatio = calculateXirr(first.capturedAt(), last.capturedAt(), startValue, endValue, cashflows);
+        CashflowHealth cashflowHealth = cashflowHealth(
+                normalizedAccount,
+                first.capturedAt(),
+                last.capturedAt(),
+                absoluteReturn
+        );
 
         return new PerformanceSummaryDto(
                 normalizedAccount,
@@ -93,96 +100,46 @@ public class PerformanceMetricsService {
                 nullSafe(last.loanAmount()),
                 nullSafe(last.lentAmount()),
                 nullSafe(last.unsettledInterest()),
-                ratio(nullSafe(last.lentAmount()), endValue)
+                ratio(nullSafe(last.lentAmount()), endValue),
+                cashflowHealth.status(),
+                cashflowHealth.warning()
         );
     }
 
     public PerformanceSeriesResponseDto getSeries(String account, String range) {
         String normalizedAccount = normalizeAccount(account);
         String normalizedRange = normalizeRange(range);
-        List<PerformanceSeriesPointDto> points = buildSeriesPoints(normalizedAccount, normalizedRange);
+        List<PerformanceCashflowEvent> cashflows = buildCashflows(normalizedAccount, normalizedRange);
+        List<PerformanceSeriesPointDto> points = buildSeriesPoints(normalizedAccount, normalizedRange, cashflows);
         return new PerformanceSeriesResponseDto(normalizedAccount, normalizedRange, points.size(), points);
     }
 
     public PerformanceLatestSnapshotsDto getLatestSnapshots() {
         PerformanceSnapshot main = latest(repository.findByAccount("main"));
-        PerformanceSnapshot sub = latest(repository.findByAccount("sub"));
-        return new PerformanceLatestSnapshotsDto(main, sub, combine(main, sub));
+        return new PerformanceLatestSnapshotsDto(main);
     }
 
-    private List<PerformanceSeriesPointDto> buildSeriesPoints(String account, String range) {
-        return "combined".equals(account)
-                ? combinedSeries(range)
-                : singleAccountSeries(account, range);
+    private List<PerformanceSeriesPointDto> buildSeriesPoints(
+            String account,
+            String range,
+            List<PerformanceCashflowEvent> cashflows
+    ) {
+        return singleAccountSeries(account, range, cashflows);
     }
 
     private List<PerformanceCashflowEvent> buildCashflows(String account, String range) {
-        List<PerformanceCashflowEvent> cashflows = "combined".equals(account)
-                ? combinedCashflows()
-                : cashflowRepository.findByAccount(account);
+        List<PerformanceCashflowEvent> cashflows = cashflowRepository.findByAccount(account);
         return filterCashflowsByRange(cashflows, range);
     }
 
-    private List<PerformanceSeriesPointDto> singleAccountSeries(String account, String range) {
+    private List<PerformanceSeriesPointDto> singleAccountSeries(
+            String account,
+            String range,
+            List<PerformanceCashflowEvent> cashflows
+    ) {
         List<PerformanceSnapshot> snapshots = repository.findByAccount(account);
         Instant latestTimestamp = latestTimestamp(snapshots);
-        return filterByRange(snapshots, range, latestTimestamp).stream()
-                .map(this::toPoint)
-                .toList();
-    }
-
-    private List<PerformanceSeriesPointDto> combinedSeries(String range) {
-        List<PerformanceSnapshot> mainSnapshots = repository.findByAccount("main");
-        List<PerformanceSnapshot> subSnapshots = repository.findByAccount("sub");
-        Instant latestTimestamp = latestTimestamp(mainSnapshots, subSnapshots);
-        if (latestTimestamp == null) {
-            return List.of();
-        }
-
-        List<PerformanceSnapshot> filteredMain = filterByRange(mainSnapshots, range, latestTimestamp);
-        List<PerformanceSnapshot> filteredSub = filterByRange(subSnapshots, range, latestTimestamp);
-        LinkedHashSet<Instant> timeline = new LinkedHashSet<>();
-        filteredMain.stream().map(PerformanceSnapshot::capturedAt).forEach(timeline::add);
-        filteredSub.stream().map(PerformanceSnapshot::capturedAt).forEach(timeline::add);
-
-        if (timeline.isEmpty()) {
-            return List.of();
-        }
-
-        NavigableMap<Instant, PerformanceSnapshot> mainByTime = indexByTime(mainSnapshots);
-        NavigableMap<Instant, PerformanceSnapshot> subByTime = indexByTime(subSnapshots);
-        return timeline.stream()
-                .sorted()
-                .map(timestamp -> combine(
-                        floorValue(mainByTime, timestamp),
-                        floorValue(subByTime, timestamp)
-                ))
-                .filter(java.util.Objects::nonNull)
-                .map(this::toPoint)
-                .toList();
-    }
-
-    private List<PerformanceCashflowEvent> combinedCashflows() {
-        return java.util.stream.Stream.concat(
-                        cashflowRepository.findByAccount("main").stream(),
-                        cashflowRepository.findByAccount("sub").stream()
-                )
-                .filter(event -> !event.type().isInternalTransfer())
-                .sorted(Comparator.comparing(PerformanceCashflowEvent::capturedAt))
-                .toList();
-    }
-
-    private NavigableMap<Instant, PerformanceSnapshot> indexByTime(List<PerformanceSnapshot> snapshots) {
-        NavigableMap<Instant, PerformanceSnapshot> map = new TreeMap<>();
-        for (PerformanceSnapshot snapshot : snapshots) {
-            map.put(snapshot.capturedAt(), snapshot);
-        }
-        return map;
-    }
-
-    private PerformanceSnapshot floorValue(NavigableMap<Instant, PerformanceSnapshot> map, Instant timestamp) {
-        var entry = map.floorEntry(timestamp);
-        return entry == null ? null : entry.getValue();
+        return toSeriesPoints(filterByRange(snapshots, range, latestTimestamp), cashflows);
     }
 
     private List<PerformanceSnapshot> filterByRange(List<PerformanceSnapshot> snapshots, String range, Instant latestTimestamp) {
@@ -225,7 +182,41 @@ public class PerformanceMetricsService {
         };
     }
 
-    private PerformanceSeriesPointDto toPoint(PerformanceSnapshot snapshot) {
+    private List<PerformanceSeriesPointDto> toSeriesPoints(
+            List<PerformanceSnapshot> snapshots,
+            List<PerformanceCashflowEvent> cashflows
+    ) {
+        if (snapshots.isEmpty()) {
+            return List.of();
+        }
+
+        List<PerformanceSeriesPointDto> points = new ArrayList<>();
+        BigDecimal twrIndex = TWR_INDEX_BASE;
+        for (int index = 0; index < snapshots.size(); index++) {
+            PerformanceSnapshot current = snapshots.get(index);
+            BigDecimal periodCashflow = ZERO;
+            if (index > 0) {
+                PerformanceSnapshot previous = snapshots.get(index - 1);
+                periodCashflow = netCashflowBetween(cashflows, previous.capturedAt(), current.capturedAt());
+                BigDecimal startValue = nullSafe(previous.totalWalletAmount());
+                BigDecimal endValue = nullSafe(current.totalWalletAmount());
+                if (startValue.compareTo(ZERO) > 0) {
+                    BigDecimal periodReturn = endValue.subtract(startValue).subtract(periodCashflow)
+                            .divide(startValue, 8, RoundingMode.HALF_UP);
+                    twrIndex = twrIndex.multiply(ONE.add(periodReturn), MATH_CONTEXT)
+                            .setScale(8, RoundingMode.HALF_UP);
+                }
+            }
+            points.add(toPoint(current, twrIndex, periodCashflow));
+        }
+        return points;
+    }
+
+    private PerformanceSeriesPointDto toPoint(
+            PerformanceSnapshot snapshot,
+            BigDecimal twrIndex,
+            BigDecimal periodCashflow
+    ) {
         return new PerformanceSeriesPointDto(
                 snapshot.capturedAt(),
                 nullSafe(snapshot.totalWalletAmount()),
@@ -234,38 +225,9 @@ public class PerformanceMetricsService {
                 nullSafe(snapshot.creditAmount()),
                 nullSafe(snapshot.loanAmount()),
                 nullSafe(snapshot.lentAmount()),
-                nullSafe(snapshot.unsettledInterest())
-        );
-    }
-
-    private PerformanceSnapshot combine(PerformanceSnapshot main, PerformanceSnapshot sub) {
-        if (main == null && sub == null) {
-            return null;
-        }
-
-        Instant capturedAt = main == null ? sub.capturedAt() : sub == null ? main.capturedAt() : laterOf(main.capturedAt(), sub.capturedAt());
-        BigDecimal totalWalletAmount = add(main == null ? null : main.totalWalletAmount(), sub == null ? null : sub.totalWalletAmount());
-        BigDecimal idleAmount = add(main == null ? null : main.idleAmount(), sub == null ? null : sub.idleAmount());
-        BigDecimal offerAmount = add(main == null ? null : main.offerAmount(), sub == null ? null : sub.offerAmount());
-        BigDecimal creditAmount = add(main == null ? null : main.creditAmount(), sub == null ? null : sub.creditAmount());
-        BigDecimal loanAmount = add(main == null ? null : main.loanAmount(), sub == null ? null : sub.loanAmount());
-        BigDecimal lentAmount = add(main == null ? null : main.lentAmount(), sub == null ? null : sub.lentAmount());
-        BigDecimal unsettledInterest = add(main == null ? null : main.unsettledInterest(), sub == null ? null : sub.unsettledInterest());
-
-        return new PerformanceSnapshot(
-                "combined",
-                "fUSD",
-                "USD",
-                capturedAt,
-                totalWalletAmount,
-                idleAmount,
-                offerAmount,
-                creditAmount,
-                loanAmount,
-                lentAmount,
-                unsettledInterest,
-                ratio(lentAmount, totalWalletAmount),
-                "aggregated"
+                nullSafe(snapshot.unsettledInterest()),
+                twrIndex,
+                periodCashflow
         );
     }
 
@@ -297,8 +259,50 @@ public class PerformanceMetricsService {
                 ZERO,
                 ZERO,
                 ZERO,
-                ZERO
+                ZERO,
+                cashflowCount == 0 ? PerformanceCashflowStatus.EMPTY : PerformanceCashflowStatus.OK,
+                cashflowCount == 0 ? "尚未同步 cashflow ledger，績效可能把入金或轉出誤算成報酬。" : null
         );
+    }
+
+    private CashflowHealth cashflowHealth(
+            String account,
+            Instant startAt,
+            Instant endAt,
+            BigDecimal absoluteReturn
+    ) {
+        if (hasNoStoredCashflows(account) && absoluteReturn.compareTo(ZERO) != 0) {
+            return new CashflowHealth(
+                    PerformanceCashflowStatus.EMPTY,
+                    "尚未同步 cashflow ledger，績效可能把入金或轉出誤算成報酬。"
+            );
+        }
+        if (isCashflowSyncStale(account, endAt)) {
+            return new CashflowHealth(
+                    PerformanceCashflowStatus.STALE,
+                    "cashflow 同步時間早於最新快照，近期入金或轉出可能尚未納入。"
+            );
+        }
+        if (startAt == null || endAt == null) {
+            return new CashflowHealth(PerformanceCashflowStatus.OK, null);
+        }
+        return new CashflowHealth(PerformanceCashflowStatus.OK, null);
+    }
+
+    private boolean hasNoStoredCashflows(String account) {
+        return cashflowRepository.findByAccount(account).isEmpty();
+    }
+
+    private boolean isCashflowSyncStale(String account, Instant endAt) {
+        if (endAt == null) {
+            return false;
+        }
+        var state = syncStateRepository.load();
+        return isAccountSyncStale(state.mainLastSyncedAt(), endAt);
+    }
+
+    private boolean isAccountSyncStale(Instant lastSyncedAt, Instant endAt) {
+        return lastSyncedAt != null && endAt.isAfter(lastSyncedAt.plus(CASHFLOW_STALE_AFTER));
     }
 
     private PerformanceSnapshot latest(List<PerformanceSnapshot> snapshots) {
@@ -502,12 +506,23 @@ public class PerformanceMetricsService {
         return nullSafe(numerator).divide(denominator, 8, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal add(BigDecimal left, BigDecimal right) {
-        return nullSafe(left).add(nullSafe(right));
-    }
-
     private BigDecimal netCashflow(List<PerformanceCashflowEvent> cashflows) {
         return cashflows.stream()
+                .map(PerformanceCashflowEvent::amount)
+                .reduce(ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal netCashflowBetween(
+            List<PerformanceCashflowEvent> cashflows,
+            Instant exclusiveStart,
+            Instant inclusiveEnd
+    ) {
+        if (exclusiveStart == null || inclusiveEnd == null) {
+            return ZERO;
+        }
+        return cashflows.stream()
+                .filter(event -> event.capturedAt().isAfter(exclusiveStart))
+                .filter(event -> !event.capturedAt().isAfter(inclusiveEnd))
                 .map(PerformanceCashflowEvent::amount)
                 .reduce(ZERO, BigDecimal::add);
     }
@@ -516,14 +531,10 @@ public class PerformanceMetricsService {
         return value == null ? ZERO : value;
     }
 
-    private Instant laterOf(Instant left, Instant right) {
-        return left.isAfter(right) ? left : right;
-    }
-
     private String normalizeAccount(String account) {
-        String normalized = account == null || account.isBlank() ? "combined" : account.trim().toLowerCase(Locale.ROOT);
-        if (!List.of("main", "sub", "combined").contains(normalized)) {
-            throw new IllegalArgumentException("account must be one of: main, sub, combined");
+        String normalized = account == null || account.isBlank() ? "main" : account.trim().toLowerCase(Locale.ROOT);
+        if (!"main".equals(normalized)) {
+            throw new IllegalArgumentException("account must be main");
         }
         return normalized;
     }
@@ -537,5 +548,8 @@ public class PerformanceMetricsService {
     }
 
     private record DatedAmount(Instant timestamp, BigDecimal amount) {
+    }
+
+    private record CashflowHealth(PerformanceCashflowStatus status, String warning) {
     }
 }

@@ -30,6 +30,8 @@ public record PerformanceSummaryDto(
         BigDecimal loanAmount,
         BigDecimal lentAmount,
         BigDecimal unsettledInterest,
-        BigDecimal utilizationRatio
+        BigDecimal utilizationRatio,
+        PerformanceCashflowStatus cashflowStatus,
+        String cashflowWarning
 ) {
 }

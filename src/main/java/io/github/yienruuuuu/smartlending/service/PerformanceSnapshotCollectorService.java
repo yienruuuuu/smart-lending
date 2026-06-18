@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * 收集主帳戶與 sub account 的 funding performance 快照。
+ * 收集主帳戶的 funding performance 快照。
  */
 @Service
 public class PerformanceSnapshotCollectorService {
@@ -28,23 +28,17 @@ public class PerformanceSnapshotCollectorService {
     private final BitfinexProperties bitfinexProperties;
     private final BitfinexAccountRestClient bitfinexAccountRestClient;
     private final BitfinexFundingAccountRestClient bitfinexFundingAccountRestClient;
-    private final SubBitfinexAccountRestClient subBitfinexAccountRestClient;
-    private final SubBitfinexFundingAccountRestClient subBitfinexFundingAccountRestClient;
     private final PerformanceSnapshotFileRepository repository;
 
     public PerformanceSnapshotCollectorService(
             BitfinexProperties bitfinexProperties,
             BitfinexAccountRestClient bitfinexAccountRestClient,
             BitfinexFundingAccountRestClient bitfinexFundingAccountRestClient,
-            SubBitfinexAccountRestClient subBitfinexAccountRestClient,
-            SubBitfinexFundingAccountRestClient subBitfinexFundingAccountRestClient,
             PerformanceSnapshotFileRepository repository
     ) {
         this.bitfinexProperties = bitfinexProperties;
         this.bitfinexAccountRestClient = bitfinexAccountRestClient;
         this.bitfinexFundingAccountRestClient = bitfinexFundingAccountRestClient;
-        this.subBitfinexAccountRestClient = subBitfinexAccountRestClient;
-        this.subBitfinexFundingAccountRestClient = subBitfinexFundingAccountRestClient;
         this.repository = repository;
     }
 
@@ -53,11 +47,6 @@ public class PerformanceSnapshotCollectorService {
         List<PerformanceSnapshot> captured = new ArrayList<>();
 
         captureMain(capturedAt).ifPresent(snapshot -> {
-            repository.append(snapshot);
-            captured.add(snapshot);
-        });
-
-        captureSub(capturedAt).ifPresent(snapshot -> {
             repository.append(snapshot);
             captured.add(snapshot);
         });
@@ -78,22 +67,6 @@ public class PerformanceSnapshotCollectorService {
                 bitfinexFundingAccountRestClient.getFundingOffers(TARGET_SYMBOL),
                 bitfinexFundingAccountRestClient.getFundingCredits(TARGET_SYMBOL),
                 bitfinexFundingAccountRestClient.getFundingLoans(TARGET_SYMBOL)
-        ));
-    }
-
-    private Optional<PerformanceSnapshot> captureSub(Instant capturedAt) {
-        if (!bitfinexProperties.hasSubAccountCredentials()) {
-            log.debug("略過 sub performance snapshot：未設定 sub account API 憑證");
-            return Optional.empty();
-        }
-
-        return Optional.of(buildSnapshot(
-                "sub",
-                capturedAt,
-                subBitfinexAccountRestClient.getWallets(),
-                subBitfinexFundingAccountRestClient.getFundingOffers(TARGET_SYMBOL),
-                subBitfinexFundingAccountRestClient.getFundingCredits(TARGET_SYMBOL),
-                subBitfinexFundingAccountRestClient.getFundingLoans(TARGET_SYMBOL)
         ));
     }
 

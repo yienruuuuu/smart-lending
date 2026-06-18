@@ -12,8 +12,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -70,43 +68,13 @@ public class PerformanceLogsService {
     }
 
     private List<PerformanceLogRowDto> snapshotRows(String account, String range) {
-        return "combined".equals(account)
-                ? combinedSnapshotRows(range)
-                : singleSnapshotRows(account, range);
+        return singleSnapshotRows(account, range);
     }
 
     private List<PerformanceLogRowDto> singleSnapshotRows(String account, String range) {
         List<PerformanceSnapshot> snapshots = snapshotRepository.findByAccount(account);
         Instant latest = latestSnapshotTime(snapshots);
         return filterSnapshotsByRange(snapshots, range, latest).stream()
-                .map(this::snapshotRow)
-                .toList();
-    }
-
-    private List<PerformanceLogRowDto> combinedSnapshotRows(String range) {
-        List<PerformanceSnapshot> mainSnapshots = snapshotRepository.findByAccount("main");
-        List<PerformanceSnapshot> subSnapshots = snapshotRepository.findByAccount("sub");
-        Instant latestTimestamp = latestSnapshotTime(mainSnapshots, subSnapshots);
-        if (latestTimestamp == null) {
-            return List.of();
-        }
-
-        List<PerformanceSnapshot> filteredMain = filterSnapshotsByRange(mainSnapshots, range, latestTimestamp);
-        List<PerformanceSnapshot> filteredSub = filterSnapshotsByRange(subSnapshots, range, latestTimestamp);
-        java.util.LinkedHashSet<Instant> timeline = new java.util.LinkedHashSet<>();
-        filteredMain.stream().map(PerformanceSnapshot::capturedAt).forEach(timeline::add);
-        filteredSub.stream().map(PerformanceSnapshot::capturedAt).forEach(timeline::add);
-
-        NavigableMap<Instant, PerformanceSnapshot> mainByTime = indexSnapshots(mainSnapshots);
-        NavigableMap<Instant, PerformanceSnapshot> subByTime = indexSnapshots(subSnapshots);
-
-        return timeline.stream()
-                .sorted()
-                .map(timestamp -> combineSnapshot(
-                        floorSnapshot(mainByTime, timestamp),
-                        floorSnapshot(subByTime, timestamp)
-                ))
-                .filter(java.util.Objects::nonNull)
                 .map(this::snapshotRow)
                 .toList();
     }
@@ -225,42 +193,6 @@ public class PerformanceLogsService {
         return times.stream().max(Comparator.naturalOrder()).orElse(null);
     }
 
-    private NavigableMap<Instant, PerformanceSnapshot> indexSnapshots(List<PerformanceSnapshot> snapshots) {
-        NavigableMap<Instant, PerformanceSnapshot> map = new TreeMap<>();
-        snapshots.forEach(snapshot -> map.put(snapshot.capturedAt(), snapshot));
-        return map;
-    }
-
-    private PerformanceSnapshot floorSnapshot(NavigableMap<Instant, PerformanceSnapshot> map, Instant timestamp) {
-        var entry = map.floorEntry(timestamp);
-        return entry == null ? null : entry.getValue();
-    }
-
-    private PerformanceSnapshot combineSnapshot(PerformanceSnapshot main, PerformanceSnapshot sub) {
-        if (main == null && sub == null) {
-            return null;
-        }
-        Instant capturedAt = main == null ? sub.capturedAt() : sub == null ? main.capturedAt() : (main.capturedAt().isAfter(sub.capturedAt()) ? main.capturedAt() : sub.capturedAt());
-        BigDecimal totalWalletAmount = add(main == null ? null : main.totalWalletAmount(), sub == null ? null : sub.totalWalletAmount());
-        BigDecimal idleAmount = add(main == null ? null : main.idleAmount(), sub == null ? null : sub.idleAmount());
-        BigDecimal lentAmount = add(main == null ? null : main.lentAmount(), sub == null ? null : sub.lentAmount());
-        return new PerformanceSnapshot(
-                "combined",
-                "fUSD",
-                "USD",
-                capturedAt,
-                totalWalletAmount,
-                idleAmount,
-                add(main == null ? null : main.offerAmount(), sub == null ? null : sub.offerAmount()),
-                add(main == null ? null : main.creditAmount(), sub == null ? null : sub.creditAmount()),
-                add(main == null ? null : main.loanAmount(), sub == null ? null : sub.loanAmount()),
-                lentAmount,
-                add(main == null ? null : main.unsettledInterest(), sub == null ? null : sub.unsettledInterest()),
-                ratio(lentAmount, totalWalletAmount),
-                "aggregated"
-        );
-    }
-
     private Duration duration(String range) {
         return switch (range) {
             case "7d" -> Duration.ofDays(7);
@@ -271,9 +203,9 @@ public class PerformanceLogsService {
     }
 
     private String normalizeAccount(String account) {
-        String normalized = account == null || account.isBlank() ? "combined" : account.trim().toLowerCase(Locale.ROOT);
-        if (!List.of("main", "sub", "combined").contains(normalized)) {
-            throw new IllegalArgumentException("account must be one of: main, sub, combined");
+        String normalized = account == null || account.isBlank() ? "main" : account.trim().toLowerCase(Locale.ROOT);
+        if (!"main".equals(normalized)) {
+            throw new IllegalArgumentException("account must be main");
         }
         return normalized;
     }
@@ -296,17 +228,6 @@ public class PerformanceLogsService {
 
     private String normalizeQuery(String q) {
         return q == null || q.isBlank() ? null : q.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private BigDecimal add(BigDecimal left, BigDecimal right) {
-        return nullSafe(left).add(nullSafe(right));
-    }
-
-    private BigDecimal ratio(BigDecimal numerator, BigDecimal denominator) {
-        if (denominator == null || denominator.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        return nullSafe(numerator).divide(denominator, 8, java.math.RoundingMode.HALF_UP);
     }
 
     private BigDecimal nullSafe(BigDecimal value) {

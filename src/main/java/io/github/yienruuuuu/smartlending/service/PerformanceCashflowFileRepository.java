@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.springframework.stereotype.Repository;
 
@@ -61,6 +62,37 @@ public class PerformanceCashflowFileRepository {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to read performance cashflows for account: " + account, exception);
         }
+    }
+
+    public Optional<PerformanceCashflowEvent> findByReferenceId(String account, String referenceId) {
+        return findByAccount(account).stream()
+                .filter(event -> Objects.equals(event.referenceId(), referenceId))
+                .findFirst();
+    }
+
+    public void replace(String account, String referenceId, PerformanceCashflowEvent replacement) {
+        List<PerformanceCashflowEvent> updated = findByAccount(account).stream()
+                .filter(event -> !Objects.equals(event.referenceId(), referenceId))
+                .toList();
+        Map<String, PerformanceCashflowEvent> merged = new LinkedHashMap<>();
+        updated.forEach(event -> merged.put(stableReferenceId(event), event));
+        PerformanceCashflowEvent normalizedReplacement = withFallbackReferenceId(replacement);
+        merged.put(stableReferenceId(normalizedReplacement), normalizedReplacement);
+        writeAll(account, merged.values().stream()
+                .sorted(CASHFLOW_ORDER)
+                .toList());
+    }
+
+    public boolean delete(String account, String referenceId) {
+        List<PerformanceCashflowEvent> existing = findByAccount(account);
+        List<PerformanceCashflowEvent> remaining = existing.stream()
+                .filter(event -> !Objects.equals(event.referenceId(), referenceId))
+                .toList();
+        if (remaining.size() == existing.size()) {
+            return false;
+        }
+        writeAll(account, remaining);
+        return true;
     }
 
     private void writeAll(String account, List<PerformanceCashflowEvent> events) {

@@ -29,7 +29,7 @@ public class PerformanceCashflowSyncSchedulerService {
             return;
         }
 
-        int count = performanceCashflowService.syncAll();
-        log.info("已完成 performance cashflow 同步排程。syncedCount={}", count);
+        var response = performanceCashflowService.syncAll();
+        log.info("已完成 performance cashflow 同步排程。syncedCount={}", response.syncedCount());
     }
 }

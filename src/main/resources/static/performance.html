@@ -11,15 +11,11 @@
     <section class="hero">
         <p class="eyebrow">Smart Lending</p>
         <h1>放貸績效儀表板</h1>
-        <p class="subtitle">用 repo 內保存的快照追蹤主帳戶、sub account 與合併後的 fUSD 績效表現。</p>
+        <p class="subtitle">用 repo 內保存的主帳戶快照與 Bitfinex v2 ledger 追蹤 fUSD 績效表現。</p>
     </section>
 
     <section class="toolbar">
-        <div class="segmented" id="account-tabs">
-            <button data-account="combined" class="active">合併</button>
-            <button data-account="main">主帳戶</button>
-            <button data-account="sub">子帳戶</button>
-        </div>
+        <div class="toolbar-title">主帳戶</div>
         <div class="toolbar-actions">
             <a class="logs-link" href="/logs.html">查看日誌</a>
             <label class="range-picker">
@@ -36,49 +32,52 @@
 
     <section class="summary-grid">
         <article class="card">
-            <h2>合併</h2>
-            <p class="metric-label">TWR 年化</p>
-            <p class="metric" id="combined-twr">--</p>
-            <p class="metric-label">XIRR</p>
-            <p class="secondary-metric" id="combined-xirr">不適用</p>
-            <p class="detail" id="combined-wallet">資產 --</p>
-        </article>
-        <article class="card">
             <h2>主帳戶</h2>
             <p class="metric-label">TWR 年化</p>
             <p class="metric" id="main-twr">--</p>
             <p class="metric-label">XIRR</p>
             <p class="secondary-metric" id="main-xirr">--</p>
             <p class="detail" id="main-wallet">資產 --</p>
-        </article>
-        <article class="card">
-            <h2>子帳戶</h2>
-            <p class="metric-label">TWR 年化</p>
-            <p class="metric" id="sub-twr">--</p>
-            <p class="metric-label">XIRR</p>
-            <p class="secondary-metric" id="sub-xirr">--</p>
-            <p class="detail" id="sub-wallet">資產 --</p>
+            <p class="warning" id="main-cashflow-warning" hidden></p>
         </article>
     </section>
 
-    <section class="chart-panel">
-        <div class="chart-header">
-            <div>
-                <p class="eyebrow">趨勢</p>
-                <h2 id="chart-title">合併績效</h2>
+    <div class="dashboard-grid">
+        <section class="chart-panel">
+            <div class="chart-header">
+                <div>
+                    <p class="eyebrow">趨勢</p>
+                    <h2 id="chart-title">主帳戶績效</h2>
+                </div>
+                <div class="chart-stats">
+                    <span id="range-return">報酬 --</span>
+                    <span id="range-count">點數 --</span>
+                    <span id="range-cashflow">現金流 --</span>
+                </div>
             </div>
-            <div class="chart-stats">
-                <span id="range-return">報酬 --</span>
-                <span id="range-count">點數 --</span>
-                <span id="range-cashflow">現金流 --</span>
+            <div class="chart-wrap">
+                <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" aria-label="績效折線圖"></svg>
+                <div id="chart-tooltip" class="chart-tooltip" hidden></div>
             </div>
-        </div>
-        <div class="chart-wrap">
-            <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" aria-label="績效折線圖"></svg>
-            <div id="chart-tooltip" class="chart-tooltip" hidden></div>
-        </div>
-    </section>
+        </section>
+
+        <aside class="adjustment-panel">
+            <div class="adjustment-header">
+                <div>
+                    <p class="eyebrow">本金</p>
+                    <h2>Ledger 同步</h2>
+                </div>
+                <button type="button" class="secondary-button" id="sync-cashflows">同步</button>
+            </div>
+            <p class="form-status" id="cashflow-status" role="status"></p>
+            <div class="cashflow-list-header">
+                <h3>最近事件</h3>
+                <span id="cashflow-list-count">--</span>
+            </div>
+            <div class="cashflow-list" id="cashflow-list"></div>
+        </aside>
+    </div>
 </main>
-<script src="/performance.js"></script>
+<script src="/performance.js?v=20260618-main-ledger"></script>
 </body>
 </html>

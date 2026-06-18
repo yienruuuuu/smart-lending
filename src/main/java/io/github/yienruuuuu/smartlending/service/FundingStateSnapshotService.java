@@ -12,7 +12,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
- * 收集主帳戶與子帳戶目前 funding 狀態，供通知比對使用。
+ * 收集主帳戶目前 funding 狀態，供通知比對使用。
  */
 @Service
 public class FundingStateSnapshotService {
@@ -23,21 +23,15 @@ public class FundingStateSnapshotService {
     private final BitfinexProperties properties;
     private final BitfinexAccountRestClient bitfinexAccountRestClient;
     private final BitfinexFundingAccountRestClient fundingAccountRestClient;
-    private final SubBitfinexAccountRestClient subBitfinexAccountRestClient;
-    private final SubBitfinexFundingAccountRestClient subFundingAccountRestClient;
 
     public FundingStateSnapshotService(
             BitfinexProperties properties,
             BitfinexAccountRestClient bitfinexAccountRestClient,
-            BitfinexFundingAccountRestClient fundingAccountRestClient,
-            SubBitfinexAccountRestClient subBitfinexAccountRestClient,
-            SubBitfinexFundingAccountRestClient subFundingAccountRestClient
+            BitfinexFundingAccountRestClient fundingAccountRestClient
     ) {
         this.properties = properties;
         this.bitfinexAccountRestClient = bitfinexAccountRestClient;
         this.fundingAccountRestClient = fundingAccountRestClient;
-        this.subBitfinexAccountRestClient = subBitfinexAccountRestClient;
-        this.subFundingAccountRestClient = subFundingAccountRestClient;
     }
 
     public Optional<FundingStateSnapshot> captureMain() {
@@ -50,19 +44,6 @@ public class FundingStateSnapshotService {
                 fundingAccountRestClient.getFundingOffers(TARGET_SYMBOL),
                 fundingAccountRestClient.getFundingCredits(TARGET_SYMBOL),
                 fundingAccountRestClient.getFundingLoans(TARGET_SYMBOL)
-        ));
-    }
-
-    public Optional<FundingStateSnapshot> captureSub() {
-        if (!properties.hasSubAccountCredentials()) {
-            return Optional.empty();
-        }
-        return Optional.of(capture(
-                "sub",
-                subBitfinexAccountRestClient.getWallets(),
-                subFundingAccountRestClient.getFundingOffers(TARGET_SYMBOL),
-                subFundingAccountRestClient.getFundingCredits(TARGET_SYMBOL),
-                subFundingAccountRestClient.getFundingLoans(TARGET_SYMBOL)
         ));
     }
 

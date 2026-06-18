@@ -13,7 +13,7 @@
 - 提供 RESTful API 查詢 lendbook ask 匯總、FRR ask 金額與 FRR 佔比
 - 提供 RESTful API 依期間區間與利率小數位分桶統計 lendbook ask 總額
 - 每 10 分鐘自動查詢一次特定 funding rate distribution，並記錄門檻利率
-- 每 10 分鐘檢查一次 sub account funding wallet，閒置資金大於 150 USD 時以固定條件掛單
+- 每 10 分鐘檢查一次主帳戶 funding wallet，符合策略條件時調整主帳戶 funding 掛單
 - 提供 Swagger UI 方便直接測試 API
 
 ## 本機設定
@@ -23,13 +23,9 @@
 ```dotenv
 BITFINEX_API_KEY=
 BITFINEX_API_SECRET=
-SUB_BITFINEX_API_KEY=
-SUB_BITFINEX_API_SECRET=
 ```
 
 目前市場查詢 API 不會使用 `BITFINEX_API_KEY` 與 `BITFINEX_API_SECRET`，但主帳戶的帳戶查詢與 funding offer 操作 API 會使用這兩個欄位，且 key 需要有對應權限。
-
-若要啟用 sub account 固定策略，請另外提供 `SUB_BITFINEX_API_KEY` 與 `SUB_BITFINEX_API_SECRET`。未提供時，sub account 排程會自動略過。
 
 ## 可調整參數
 
@@ -163,15 +159,6 @@ GET /api/v1/funding/market/lendbook/rate-distribution?currency=USD&minPeriod=2&m
 
 如果第一筆 bucket 就已經大於 `5.0`，則會記錄目前第一筆已超過門檻，沒有前一筆可取。
 
-另外，系統也會每 10 分鐘檢查一次 sub account 的 funding wallet：
-
-- 需要先設定 `SUB_BITFINEX_API_KEY` 與 `SUB_BITFINEX_API_SECRET`
-- 只檢查 `funding/USD` wallet 的 `availableBalance`
-- `availableBalance > 150` 時，會以目前全部閒置金額建立一筆 `fUSD` funding offer
-- 固定日利率 `0.0435`
-- 固定 `120` 天
-- `availableBalance <= 150` 時不動作
-
 注意：這些市場 API 反映的是目前查回的 lendbook ask snapshot，不是已成交借出的總額。
 
 帳戶查詢與操作 API：
@@ -220,10 +207,9 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 
 ## Performance 快照與可視化
 
-系統現在支援把主帳戶與 sub account 的 `fUSD` funding 狀態定時寫成 JSONL 快照，預設資料目錄為 `data/performance/`：
+系統現在支援把主帳戶的 `fUSD` funding 狀態定時寫成 JSONL 快照，預設資料目錄為 `data/performance/`：
 
 - `main-fusd-snapshots.jsonl`
-- `sub-fusd-snapshots.jsonl`
 
 每筆快照會保存：
 
@@ -239,11 +225,9 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 績效計算目前同時提供兩種口徑：
 
 - `TWR`：以 snapshot 搭配 cashflow ledger 計算，偏向衡量策略績效
-- `XIRR`：只在 `main` / `sub` 提供，偏向衡量資金實際投報
+- `XIRR`：衡量資金實際投報
 
-`combined` 只提供 `TWR`，且會忽略主副帳互轉，不把內部搬錢誤算成報酬。
-
-`main` / `sub` 會同時回傳：
+`main` 會同時回傳：
 
 - 舊版資產曲線欄位：`totalReturn*`、`annualizedReturn*`
 - `TWR` 欄位：`twrReturn*`、`twrAnnualizedReturn*`
@@ -254,13 +238,13 @@ GET  /api/v1/account/funding/loans?symbol=fUSD
 
 系統會定時從 Bitfinex authenticated API 自動同步 performance cashflow ledger：
 
-- `v1/history/movements`：同步 `DEPOSIT` / `WITHDRAWAL`
-- `v1/history`：以官方 balance history 帳務項目辨識 `INTERNAL_TRANSFER_IN` / `INTERNAL_TRANSFER_OUT`
+- `POST /v2/auth/r/ledgers/USD/hist`：只讀主帳戶 v2 ledger
+- `wallet=funding` 且 description 包含 `transfer` 時，依 amount 正負辨識 `INTERNAL_TRANSFER_IN` / `INTERNAL_TRANSFER_OUT`
+- `Margin Funding Payment`、exchange wallet 轉換與非 transfer ledger 不會當成本金 cashflow
 
 同步後的 cashflow 會存到：
 
 - `data/performance/main-fusd-cashflows.jsonl`
-- `data/performance/sub-fusd-cashflows.jsonl`
 
 可透過 `.env` 或系統環境變數調整：
 
@@ -278,16 +262,17 @@ TELEGRAM_POLL_FIXED_DELAY_MILLIS=600000
 報表 API：
 
 ```http
-GET /api/v1/performance/summary?account=combined&range=30d
+GET /api/v1/performance/summary?account=main&range=30d
 GET /api/v1/performance/series?account=main&range=7d
 GET /api/v1/performance/snapshots/latest
 GET /api/v1/performance/cashflows?account=main&range=30d
-GET /api/v1/performance/logs?account=combined&range=30d&type=all&page=0&size=50
+POST /api/v1/performance/cashflows/sync
+GET /api/v1/performance/logs?account=main&range=30d&type=all&page=0&size=50
 ```
 
 ## Telegram 狀態切換通知
 
-若有設定 `TELEGRAM_BOT_TOKEN` 與 `TELEGRAM_CHAT_ID`，系統會定時比對主帳戶與 sub account 的 funding 狀態，只有在以下切換時才推送通知：
+若有設定 `TELEGRAM_BOT_TOKEN` 與 `TELEGRAM_CHAT_ID`，系統會定時比對主帳戶 funding 狀態，只有在以下切換時才推送通知：
 
 - 掛單中 -> 放貸中：有人借款了
 - 放貸中 -> 掛單中：有人還款了

@@ -29,7 +29,7 @@ public class FundingStateBaselineRepository {
     public FundingStateBaseline load() {
         Path file = filePath();
         if (!Files.exists(file)) {
-            return new FundingStateBaseline(null, null);
+            return new FundingStateBaseline(null);
         }
 
         try {

@@ -8,7 +8,7 @@ import org.springframework.validation.annotation.Validated;
 /**
  * Bitfinex 相關設定。
  *
- * <p>包含主帳戶與 sub 帳戶憑證、REST base URL、公開市場查詢 timeout，以及取消掛單後重新下單前的等待時間。
+ * <p>包含主帳戶憑證、REST base URL、公開市場查詢 timeout，以及取消掛單後重新下單前的等待時間。
  */
 @Validated
 @ConfigurationProperties(prefix = "bitfinex")
@@ -16,8 +16,6 @@ public class BitfinexProperties {
 
     private String apiKey = "";
     private String apiSecret = "";
-    private String subApiKey = "";
-    private String subApiSecret = "";
 
     @NotBlank
     private String restBaseUrl = "https://api.bitfinex.com";
@@ -48,22 +46,6 @@ public class BitfinexProperties {
 
     public void setApiSecret(String apiSecret) {
         this.apiSecret = apiSecret;
-    }
-
-    public String getSubApiKey() {
-        return subApiKey;
-    }
-
-    public void setSubApiKey(String subApiKey) {
-        this.subApiKey = subApiKey;
-    }
-
-    public String getSubApiSecret() {
-        return subApiSecret;
-    }
-
-    public void setSubApiSecret(String subApiSecret) {
-        this.subApiSecret = subApiSecret;
     }
 
     public String getRestBaseUrl() {
@@ -104,13 +86,6 @@ public class BitfinexProperties {
 
     public void setOfferResubmitDelayMillis(long offerResubmitDelayMillis) {
         this.offerResubmitDelayMillis = offerResubmitDelayMillis;
-    }
-
-    public boolean hasSubAccountCredentials() {
-        return subApiKey != null
-                && !subApiKey.isBlank()
-                && subApiSecret != null
-                && !subApiSecret.isBlank();
     }
 
     public boolean hasMainAccountCredentials() {

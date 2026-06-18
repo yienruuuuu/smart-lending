@@ -52,7 +52,8 @@ body {
 
 .toolbar,
 .summary-grid,
-.chart-panel {
+.chart-panel,
+.adjustment-panel {
     background: rgba(255, 255, 255, 0.78);
     border: 1px solid rgba(22, 32, 42, 0.08);
     backdrop-filter: blur(14px);
@@ -151,8 +152,148 @@ body {
     color: #4d5965;
 }
 
+.warning {
+    margin: 10px 0 0;
+    color: #9b4b12;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 18px;
+    align-items: start;
+}
+
 .chart-panel {
     padding: 20px;
+}
+
+.adjustment-panel {
+    padding: 18px;
+}
+
+.adjustment-header,
+.form-actions,
+.cashflow-list-header,
+.cashflow-item-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.adjustment-header h2,
+.cashflow-list-header h3 {
+    margin: 0;
+}
+
+.cashflow-form {
+    display: grid;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.cashflow-form label {
+    display: grid;
+    gap: 6px;
+    color: #4d5965;
+    font-size: 13px;
+}
+
+.cashflow-form input,
+.cashflow-form select {
+    width: 100%;
+    border: 1px solid rgba(22, 32, 42, 0.12);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.84);
+    color: #16202a;
+    font: inherit;
+    padding: 10px 12px;
+}
+
+.primary-button,
+.secondary-button,
+.text-button,
+.danger-button {
+    border: 0;
+    border-radius: 999px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.primary-button {
+    background: #16202a;
+    color: #f8f3e8;
+    padding: 10px 16px;
+}
+
+.secondary-button {
+    background: #e9edf1;
+    color: #1c2731;
+    padding: 9px 14px;
+}
+
+.text-button,
+.danger-button {
+    background: transparent;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.text-button {
+    color: #1f4f86;
+}
+
+.danger-button {
+    color: #9b2d12;
+}
+
+.form-status {
+    min-height: 18px;
+    margin: 0;
+    color: #4d5965;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.form-status.error {
+    color: #9b2d12;
+}
+
+.cashflow-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.cashflow-item {
+    border-top: 1px solid rgba(22, 32, 42, 0.08);
+    padding-top: 10px;
+}
+
+.cashflow-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 4px;
+    font-weight: 600;
+}
+
+.cashflow-meta {
+    margin: 0;
+    color: #6c7782;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.amount-positive {
+    color: #236b36;
+}
+
+.amount-negative {
+    color: #9b2d12;
 }
 
 .chart-wrap {
@@ -192,6 +333,20 @@ body {
     stroke-width: 1.2;
 }
 
+#chart .cashflow-baseline {
+    stroke: rgba(22, 32, 42, 0.18);
+    stroke-width: 1;
+    stroke-dasharray: 4 5;
+}
+
+#chart .cashflow-bar.positive {
+    fill: rgba(35, 107, 54, 0.62);
+}
+
+#chart .cashflow-bar.negative {
+    fill: rgba(155, 45, 18, 0.62);
+}
+
 #chart .chart-axis-text {
     fill: #6c7782;
     font-size: 11px;
@@ -219,6 +374,10 @@ body {
 
 @media (max-width: 860px) {
     .summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-grid {
         grid-template-columns: 1fr;
     }
 

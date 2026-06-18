@@ -62,32 +62,21 @@ class PerformanceLogsServiceTest {
     }
 
     @Test
-    void shouldBuildCombinedSnapshotsAndKeepRawCashflowAccounts() {
-        PerformanceSnapshotFileRepository snapshotRepository = snapshotRepository();
-        snapshotRepository.append(snapshot("main", "2026-03-01T00:00:00Z", "1000"));
-        snapshotRepository.append(snapshot("sub", "2026-03-01T12:00:00Z", "500"));
-
-        PerformanceCashflowService cashflowService = mock(PerformanceCashflowService.class);
-        when(cashflowService.getCashflows("combined", "30d")).thenReturn(List.of(
-                cashflow("sub", "2026-03-01T06:00:00Z", "25", PerformanceCashflowType.DEPOSIT, "ref-3", "sub deposit")
-        ));
-
-        PerformanceLogsService service = new PerformanceLogsService(snapshotRepository, cashflowService);
-
-        var response = service.getLogs("combined", "30d", "all", null, 0, 50);
-
-        assertThat(response.summary().snapshotCount()).isEqualTo(2);
-        assertThat(response.items()).anyMatch(item -> "sub".equals(item.account()) && "cashflow".equals(item.kind()));
-        assertThat(response.items()).anyMatch(item -> "combined".equals(item.account()) && "snapshot".equals(item.kind()));
-    }
-
-    @Test
     void shouldRejectUnsupportedType() {
         PerformanceLogsService service = new PerformanceLogsService(snapshotRepository(), mock(PerformanceCashflowService.class));
 
         assertThatThrownBy(() -> service.getLogs("main", "30d", "foo", null, 0, 50))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("type must be one of");
+    }
+
+    @Test
+    void shouldRejectNonMainAccount() {
+        PerformanceLogsService service = new PerformanceLogsService(snapshotRepository(), mock(PerformanceCashflowService.class));
+
+        assertThatThrownBy(() -> service.getLogs("combined", "30d", "all", null, 0, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("account must be main");
     }
 
     private PerformanceSnapshotFileRepository snapshotRepository() {

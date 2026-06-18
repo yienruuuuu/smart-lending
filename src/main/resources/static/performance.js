@@ -1,6 +1,7 @@
 const state = {
-    account: "combined",
-    range: "30d"
+    account: "main",
+    range: "30d",
+    cashflows: []
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -9,36 +10,34 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function bindControls() {
-    document.querySelectorAll("#account-tabs button").forEach((button) => {
-        button.addEventListener("click", () => {
-            document.querySelectorAll("#account-tabs button").forEach((item) => item.classList.remove("active"));
-            button.classList.add("active");
-            state.account = button.dataset.account;
+    const rangeSelect = byId("range-select");
+    if (rangeSelect) {
+        rangeSelect.addEventListener("change", (event) => {
+            state.range = event.target.value;
             refresh().catch(renderError);
         });
-    });
+    }
 
-    document.getElementById("range-select").addEventListener("change", (event) => {
-        state.range = event.target.value;
-        refresh().catch(renderError);
-    });
+    const syncButton = byId("sync-cashflows");
+    if (syncButton) {
+        syncButton.addEventListener("click", () => {
+            syncCashflows().catch(renderCashflowError);
+        });
+    }
 }
 
 async function refresh() {
-    const [combinedSummary, mainSummary, subSummary, series] = await Promise.all([
-        fetchJson("/api/v1/performance/summary?account=combined&range=" + state.range),
+    const [summary, series, cashflows] = await Promise.all([
         fetchJson("/api/v1/performance/summary?account=main&range=" + state.range),
-        fetchJson("/api/v1/performance/summary?account=sub&range=" + state.range),
-        fetchJson("/api/v1/performance/series?account=" + state.account + "&range=" + state.range)
+        fetchJson("/api/v1/performance/series?account=main&range=" + state.range),
+        fetchJson("/api/v1/performance/cashflows?account=main&range=all")
     ]);
 
-    window.__performanceSummaryCombined = combinedSummary;
-    window.__performanceSummaryMain = mainSummary;
-    window.__performanceSummarySub = subSummary;
-    updateSummaryCard("combined", combinedSummary);
-    updateSummaryCard("main", mainSummary);
-    updateSummaryCard("sub", subSummary);
+    state.cashflows = cashflows;
+    window.__performanceSummaryMain = summary;
+    updateSummaryCard("main", summary);
     updateChart(series);
+    renderCashflowList(cashflows);
 }
 
 async function fetchJson(url) {
@@ -49,16 +48,101 @@ async function fetchJson(url) {
     return response.json();
 }
 
-function updateSummaryCard(prefix, summary) {
-    setText(prefix + "-twr", formatPercent(summary.twrAnnualizedReturnPercent));
-    const xirrNode = byId(prefix + "-xirr");
-    if (xirrNode) {
-        xirrNode.textContent = summary.xirrPercent === null ? "不適用" : formatPercent(summary.xirrPercent);
+async function fetchJsonWithMethod(url, method) {
+    const response = await fetch(url, { method });
+    if (!response.ok) {
+        throw new Error(await responseErrorMessage(response));
     }
+    return response.json();
+}
+
+async function responseErrorMessage(response) {
+    try {
+        const payload = await response.json();
+        return payload.message || "Request failed";
+    } catch (error) {
+        return "Request failed";
+    }
+}
+
+function updateSummaryCard(prefix, summary) {
+    setText(prefix + "-twr", isCashflowTrusted(summary) ? formatPercent(summary.twrAnnualizedReturnPercent) : "待同步");
+    setText(prefix + "-xirr", xirrText(summary));
     setText(prefix + "-wallet",
         "資產 " + formatNumber(summary.endValue)
         + " | 利用率 " + formatPercent(Number(summary.utilizationRatio || 0) * 100)
         + " | 淨現金流 " + formatSignedNumber(summary.netCashflow));
+    updateCashflowWarning(prefix, summary);
+}
+
+function updateCashflowWarning(prefix, summary) {
+    const node = byId(prefix + "-cashflow-warning");
+    if (!node) {
+        return;
+    }
+    const warning = summary.cashflowWarning || "";
+    node.textContent = warning;
+    node.hidden = !warning;
+}
+
+async function syncCashflows() {
+    setCashflowStatus("同步中...");
+    const response = await fetchJsonWithMethod("/api/v1/performance/cashflows/sync", "POST");
+    const main = response.accounts && response.accounts.length ? response.accounts[0] : null;
+    const suffix = main
+        ? `ledger ${main.ledgerFetchedCount} 筆，本金事件 ${main.cashflowSyncedCount} 筆，忽略 ${main.ignoredCount} 筆`
+        : `${response.syncedCount} 筆`;
+    setCashflowStatus("已完成 Bitfinex v2 ledger 同步：" + suffix);
+    await refresh();
+}
+
+function renderCashflowList(items) {
+    const list = byId("cashflow-list");
+    if (!list) {
+        return;
+    }
+    const sorted = [...items]
+        .sort((left, right) => new Date(right.capturedAt).getTime() - new Date(left.capturedAt).getTime())
+        .slice(0, 10);
+    setText("cashflow-list-count", sorted.length + " 筆");
+    if (!sorted.length) {
+        list.innerHTML = `<p class="cashflow-meta">尚無本金事件，請同步 Bitfinex v2 ledger</p>`;
+        return;
+    }
+    list.innerHTML = sorted.map((item) => `
+        <div class="cashflow-item">
+            <p class="cashflow-title">
+                <span>${escapeHtml(cashflowTypeLabel(item.type))}</span>
+                <span class="${Number(item.amount || 0) >= 0 ? "amount-positive" : "amount-negative"}">${escapeHtml(formatSignedNumber(item.amount))}</span>
+            </p>
+            <p class="cashflow-meta">${escapeHtml(formatTimestamp(item.capturedAt))}</p>
+            <p class="cashflow-meta">${escapeHtml(item.source || "--")}${item.note ? " / " + escapeHtml(item.note) : ""}</p>
+        </div>
+    `).join("");
+}
+
+function renderCashflowError(error) {
+    setCashflowStatus(error.message, true);
+}
+
+function setCashflowStatus(message, isError = false) {
+    const node = byId("cashflow-status");
+    if (!node) {
+        return;
+    }
+    node.textContent = message || "";
+    node.classList.toggle("error", isError);
+}
+
+function xirrText(summary) {
+    if (!isCashflowTrusted(summary)) {
+        return "待同步";
+    }
+    return summary.xirrPercent === null ? "不適用" : formatPercent(summary.xirrPercent);
+}
+
+function isCashflowTrusted(summary) {
+    return summary && (!summary.cashflowStatus || summary.cashflowStatus === "OK");
 }
 
 function updateChart(series) {
@@ -67,11 +151,14 @@ function updateChart(series) {
     const leftPad = 28;
     const rightPad = 18;
     const topPad = 20;
-    const bottomPad = 48;
+    const lineBottom = 208;
+    const barBaseline = 256;
+    const maxBarHeight = 34;
+    const bottomPad = 30;
     const plotWidth = chartWidth - leftPad - rightPad;
-    const plotHeight = chartHeight - topPad - bottomPad;
+    const plotHeight = lineBottom - topPad;
 
-    setText("chart-title", accountLabel(series.account) + "績效");
+    setText("chart-title", "主帳戶績效");
     setText("range-count", "資料點 " + series.pointCount);
 
     if (!series.points.length) {
@@ -82,7 +169,7 @@ function updateChart(series) {
         return;
     }
 
-    const values = series.points.map((point) => Number(point.totalWalletAmount || 0));
+    const values = series.points.map((point) => Number(point.twrIndex || 100));
     const timestamps = series.points.map((point) => new Date(point.capturedAt).getTime());
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -94,18 +181,22 @@ function updateChart(series) {
     const plotPoints = series.points.map((point) => {
         const timestamp = new Date(point.capturedAt).getTime();
         const x = leftPad + (((timestamp - minTs) / timeSpread) * plotWidth);
-        const y = topPad + (plotHeight - (((Number(point.totalWalletAmount || 0) - min) / spread) * plotHeight));
+        const y = topPad + (plotHeight - (((Number(point.twrIndex || 100) - min) / spread) * plotHeight));
         return { x, y, point };
     });
 
     const polyline = plotPoints.map((item) => `${item.x},${item.y}`).join(" ");
-    const areaPoints = `${polyline} ${leftPad + plotWidth},${topPad + plotHeight} ${leftPad},${topPad + plotHeight}`;
+    const areaPoints = `${polyline} ${leftPad + plotWidth},${lineBottom} ${leftPad},${lineBottom}`;
+    const maxCashflow = Math.max(
+        ...series.points.map((point) => Math.abs(Number(point.periodCashflow || 0))),
+        0
+    );
     const tickCount = Math.min(5, Math.max(2, series.points.length));
     const ticks = buildTimeTicks(minTs, maxTs, tickCount);
     const tickMarkup = ticks.map((timestamp) => {
         const x = leftPad + (((timestamp - minTs) / timeSpread) * plotWidth);
         return `
-            <line x1="${x}" y1="${topPad}" x2="${x}" y2="${topPad + plotHeight}" class="chart-grid"></line>
+            <line x1="${x}" y1="${topPad}" x2="${x}" y2="${barBaseline + maxBarHeight}" class="chart-grid"></line>
             <text x="${x}" y="${chartHeight - 14}" text-anchor="middle" class="chart-axis-text">${escapeHtml(formatAxisTimestamp(timestamp))}</text>
         `;
     }).join("");
@@ -120,10 +211,28 @@ function updateChart(series) {
             stroke="transparent"></circle>
         <circle cx="${item.x}" cy="${item.y}" r="2.5" class="chart-dot"></circle>
     `).join("");
+    const cashflowBarMarkup = maxCashflow <= 0 ? "" : plotPoints.map((item) => {
+        const cashflow = Number(item.point.periodCashflow || 0);
+        if (cashflow === 0) {
+            return "";
+        }
+        const height = Math.max(3, (Math.abs(cashflow) / maxCashflow) * maxBarHeight);
+        const y = cashflow > 0 ? barBaseline - height : barBaseline;
+        return `
+            <rect
+                x="${item.x - 4}"
+                y="${y}"
+                width="8"
+                height="${height}"
+                rx="3"
+                class="cashflow-bar ${cashflow > 0 ? "positive" : "negative"}"></rect>
+        `;
+    }).join("");
 
-    const summary = currentSummaryForAccount(series.account);
-    setText("range-return",
-        "TWR " + (summary ? formatPercent(summary.twrReturnPercent) : formatPercent(computeSeriesReturn(series.points))));
+    const summary = window.__performanceSummaryMain;
+    setText("range-return", "TWR " + (isCashflowTrusted(summary)
+        ? formatPercent(summary.twrReturnPercent)
+        : "待同步"));
     setText("range-cashflow", "現金流 " + (summary ? formatSignedNumber(summary.netCashflow) : "--"));
     setHtml("chart", `
         <defs>
@@ -134,39 +243,16 @@ function updateChart(series) {
         </defs>
         <g>
             ${tickMarkup}
-            <line x1="${leftPad}" y1="${topPad + plotHeight}" x2="${leftPad + plotWidth}" y2="${topPad + plotHeight}" class="chart-baseline"></line>
+            <line x1="${leftPad}" y1="${lineBottom}" x2="${leftPad + plotWidth}" y2="${lineBottom}" class="chart-baseline"></line>
+            <line x1="${leftPad}" y1="${barBaseline}" x2="${leftPad + plotWidth}" y2="${barBaseline}" class="cashflow-baseline"></line>
         </g>
         <polyline fill="url(#line-fill)" stroke="none" points="${areaPoints}"></polyline>
         <polyline fill="none" stroke="#16202a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${polyline}"></polyline>
+        ${cashflowBarMarkup}
         ${pointMarkup}
     `);
 
     bindTooltip(plotPoints, chartWidth, chartHeight);
-}
-
-function currentSummaryForAccount(account) {
-    if (account === "combined") {
-        return window.__performanceSummaryCombined;
-    }
-    if (account === "main") {
-        return window.__performanceSummaryMain;
-    }
-    if (account === "sub") {
-        return window.__performanceSummarySub;
-    }
-    return null;
-}
-
-function computeSeriesReturn(points) {
-    if (points.length < 2) {
-        return 0;
-    }
-    const start = Number(points[0].totalWalletAmount || 0);
-    const end = Number(points[points.length - 1].totalWalletAmount || 0);
-    if (start <= 0) {
-        return 0;
-    }
-    return ((end - start) / start) * 100;
 }
 
 function renderError(error) {
@@ -222,21 +308,20 @@ function formatAxisTimestamp(value) {
     });
 }
 
-function titleCase(value) {
-    return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function accountLabel(value) {
-    if (value === "combined") {
-        return "合併";
+function cashflowTypeLabel(value) {
+    if (value === "INTERNAL_TRANSFER_IN") {
+        return "本金轉入";
     }
-    if (value === "main") {
-        return "主帳戶";
+    if (value === "INTERNAL_TRANSFER_OUT") {
+        return "本金轉出";
     }
-    if (value === "sub") {
-        return "子帳戶";
+    if (value === "DEPOSIT") {
+        return "外部轉入";
     }
-    return titleCase(value);
+    if (value === "WITHDRAWAL") {
+        return "外部轉出";
+    }
+    return value || "--";
 }
 
 function byId(id) {
@@ -287,7 +372,9 @@ function bindTooltip(plotPoints, chartWidth, chartHeight) {
             tooltip.hidden = false;
             tooltip.innerHTML = `
                 <div>${escapeHtml(formatTimestamp(item.point.capturedAt))}</div>
+                <div>TWR 淨值 ${escapeHtml(formatNumber(item.point.twrIndex))}</div>
                 <div>資產 ${escapeHtml(formatNumber(item.point.totalWalletAmount))}</div>
+                <div>區間本金 ${escapeHtml(formatSignedNumber(item.point.periodCashflow))}</div>
                 <div>閒置 ${escapeHtml(formatNumber(item.point.idleAmount))}</div>
                 <div>已借出 ${escapeHtml(formatNumber(item.point.lentAmount))}</div>
             `;

@@ -26,7 +26,7 @@ public class PerformanceCashflowSyncStateRepository {
     public PerformanceCashflowSyncState load() {
         Path file = filePath();
         if (!Files.exists(file)) {
-            return new PerformanceCashflowSyncState(null, null);
+            return new PerformanceCashflowSyncState(null);
         }
         try {
             return objectMapper.readValue(file.toFile(), PerformanceCashflowSyncState.class);
